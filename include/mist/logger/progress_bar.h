@@ -85,6 +85,7 @@ namespace mist::logger
 
         bar_style style_;
         bool active_ = false;
+        int suffix_width_ = -1; /// Fixed on first render; -1 = uninitialised.
         time_point start_;
 
         [[nodiscard]] static int terminal_width();
