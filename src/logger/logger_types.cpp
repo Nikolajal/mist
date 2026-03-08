@@ -38,8 +38,13 @@ namespace mist::logger
         std::ostringstream oss;
         oss << "\033[";
         for (style_tag s : styles)
-            if (s != style_tag::NONE)
-                oss << static_cast<int>(s) << ';';
+        {
+            // NONE (= 0) is SGR "reset all attributes" — emit it explicitly
+            // so callers can use {style_tag::NONE} to clear bold/underline/etc
+            // before applying a new colour. Previously this was skipped, which
+            // caused attributes from a prior sequence to bleed into the next.
+            oss << static_cast<int>(s) << ';';
+        }
         if (bg.has_value())
             oss << static_cast<int>(bg.value()) << ';';
         oss << static_cast<int>(colour) << 'm';
