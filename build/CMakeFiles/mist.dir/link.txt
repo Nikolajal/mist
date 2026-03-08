@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc libmist.a CMakeFiles/mist.dir/src/logger/logger_types.cpp.o CMakeFiles/mist.dir/src/logger/logger.cpp.o CMakeFiles/mist.dir/src/logger/progress_bar.cpp.o CMakeFiles/mist.dir/src/ring_finding/hough_transform.cpp.o
+/Library/Developer/CommandLineTools/usr/bin/ranlib libmist.a
