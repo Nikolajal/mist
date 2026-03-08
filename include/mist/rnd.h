@@ -88,7 +88,8 @@ namespace mist
         template <typename T, typename = floating_type_check<T>>
         [[nodiscard]] T uniform(T start = T(0), T end = T(1))
         {
-            if (end < start) std::swap(start, end);
+            if (end < start)
+                std::swap(start, end);
             std::uniform_real_distribution<T> dist(start, end);
             return dist(gen_);
         }

@@ -9,7 +9,8 @@ namespace mist::logger
 {
     progress_bar::progress_bar(bar_style style)
         : style_(style)
-    {}
+    {
+    }
 
     void progress_bar::update(double fraction, bool flush)
     {
@@ -19,9 +20,11 @@ namespace mist::logger
 
     void progress_bar::finish(bool flush)
     {
-        if (!active_) return;
+        if (!active_)
+            return;
         std::cout << '\n';
-        if (flush) std::cout << std::flush;
+        if (flush)
+            std::cout << std::flush;
         active_ = false;
         detail::set_update_mode(false);
     }
@@ -43,20 +46,22 @@ namespace mist::logger
         const int s = static_cast<int>(seconds) % 60;
 
         std::ostringstream oss;
-        if (h > 0) oss << h << "h ";
-        if (h > 0 || m > 0) oss << m << "m ";
+        if (h > 0)
+            oss << h << "h ";
+        if (h > 0 || m > 0)
+            oss << m << "m ";
         oss << s << "s";
         return oss.str();
     }
 
-    void progress_bar::render(float                  fraction,
+    void progress_bar::render(float fraction,
                               std::optional<int64_t> current,
                               std::optional<int64_t> total,
-                              bool                   flush)
+                              bool flush)
     {
         if (!active_)
         {
-            start_  = clock_t::now();
+            start_ = clock_t::now();
             active_ = true;
             detail::set_update_mode(true);
         }
@@ -86,28 +91,29 @@ namespace mist::logger
         const std::string suffix_str = suffix.str();
 
         constexpr int prefix_w = 11; // "[PROGRESS] "
-        constexpr int brackets =  3; // '[', ']', ' '
-        const int     term_w   = terminal_width();
-        const int     bar_w    = std::max(10,
-                                     term_w - prefix_w - brackets
-                                     - static_cast<int>(suffix_str.size()));
+        constexpr int brackets = 3;  // '[', ']', ' '
+        const int term_w = terminal_width();
+        const int bar_w = std::max(10,
+                                   term_w - prefix_w - brackets - static_cast<int>(suffix_str.size()));
 
         const int filled = static_cast<int>(std::round(fraction * bar_w));
-        const int empty  = bar_w - filled;
+        const int empty = bar_w - filled;
 
         std::string filled_str, empty_str, tip_str;
         switch (style_)
         {
         case bar_style::BLOCK:
-            for (int i = 0; i < filled; ++i) filled_str += "\xe2\x96\x88";
-            for (int i = 0; i < empty;  ++i) empty_str  += "\xe2\x96\x91";
+            for (int i = 0; i < filled; ++i)
+                filled_str += "\xe2\x96\x88";
+            for (int i = 0; i < empty; ++i)
+                empty_str += "\xe2\x96\x91";
             break;
         case bar_style::ARROW:
         default:
             if (filled > 0)
             {
                 filled_str = std::string(filled - 1, '=');
-                tip_str    = (fraction < 1.0f) ? ">" : "=";
+                tip_str = (fraction < 1.0f) ? ">" : "=";
             }
             empty_str = std::string(empty, ' ');
             break;
@@ -127,7 +133,8 @@ namespace mist::logger
                   << ansi()
                   << suffix_str;
 
-        if (flush) std::cout << std::flush;
+        if (flush)
+            std::cout << std::flush;
     }
 
 } // namespace mist::logger

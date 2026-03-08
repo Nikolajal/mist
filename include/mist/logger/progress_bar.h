@@ -6,9 +6,9 @@
 #include <algorithm>
 
 #if defined(__has_include) && __has_include(<sys/ioctl.h>)
-#   include <sys/ioctl.h>
-#   include <unistd.h>
-#   define MIST_HAS_IOCTL 1
+#include <sys/ioctl.h>
+#include <unistd.h>
+#define MIST_HAS_IOCTL 1
 #endif
 
 namespace mist::logger
@@ -55,7 +55,8 @@ namespace mist::logger
         template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
         void update(T current, T total, bool flush = true)
         {
-            if (total <= 0) return;
+            if (total <= 0)
+                return;
             const float fraction = static_cast<float>(current) / static_cast<float>(total);
             render(std::clamp(fraction, 0.0f, 1.0f),
                    static_cast<int64_t>(current),
@@ -79,20 +80,20 @@ namespace mist::logger
         [[nodiscard]] bool is_active() const { return active_; }
 
     private:
-        using clock_t    = std::chrono::steady_clock;
+        using clock_t = std::chrono::steady_clock;
         using time_point = std::chrono::time_point<clock_t>;
 
-        bar_style  style_;
-        bool       active_ = false;
+        bar_style style_;
+        bool active_ = false;
         time_point start_;
 
-        [[nodiscard]] static int         terminal_width();
+        [[nodiscard]] static int terminal_width();
         [[nodiscard]] static std::string format_duration(double seconds);
 
-        void render(float                  fraction,
+        void render(float fraction,
                     std::optional<int64_t> current,
                     std::optional<int64_t> total,
-                    bool                   flush);
+                    bool flush);
     };
 
 } // namespace mist::logger
