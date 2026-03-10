@@ -203,7 +203,8 @@ namespace mist::logger
             std::cout << up;
         }
 
-        // --- Build output into a single string for one write ---
+        // --- Build output ---
+        const bool first_render = (last_line_count_ == 0); // ← ADD THIS
         std::string out;
         out.reserve(512);
 
@@ -211,18 +212,18 @@ namespace mist::logger
 
         if (active_count > 0)
         {
-            // Separator line
-            out += '\n';
             const int tw = _terminal_width();
-            _emit_line(out,
-                       "\033[2m  ─── subtasks ───\033[0m",
-                       tw);
+
+            // ↓ CHANGE: '\n' → first_render ? "\n" : "\033[1B\r"
+            out += first_render ? "\n" : "\033[1B\r";
+            _emit_line(out, "\033[2m  ─── subtasks ───\033[0m", tw);
 
             for (auto &s : subtasks_)
             {
                 if (!s->active_)
                     continue;
-                out += '\n';
+                // ↓ CHANGE: '\n' → first_render ? "\n" : "\033[1B\r"
+                out += first_render ? "\n" : "\033[1B\r";
                 _render_subtask(out, *s);
             }
         }
@@ -231,7 +232,6 @@ namespace mist::logger
         if (flush)
             std::cout << std::flush;
 
-        // 1 (main) + (separator + K subtasks if any)
         last_line_count_ = 1 + (active_count > 0 ? 1 + active_count : 0);
     }
 
