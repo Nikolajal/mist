@@ -1,5 +1,6 @@
 #pragma once
 #include <mist/logger/logger_types.h>
+#include <mist/logger/progress_bar_registry.h>
 #include <chrono>
 #include <mutex>
 #include <optional>
@@ -26,7 +27,8 @@ namespace mist::logger
      * Owns its own state (start time, style, active flag) so multiple
      * independent bars can coexist. Integrates with the logger safety-commit
      * mechanism — a normal log() call while the bar is active will
-     * automatically commit it before printing.
+     * automatically erase the bar, print the message, and redraw the bar
+     * below it, so log output and bar rendering never corrupt each other.
      *
      * The bar auto-detects terminal width via ioctl(TIOCGWINSZ), falling
      * back to 80 columns on non-POSIX platforms or if the query fails.
@@ -36,31 +38,25 @@ namespace mist::logger
      * mutable state so any number of threads may call `update()` or `finish()`
      * concurrently without external synchronisation.
      *
-     * The lock is held only for the duration of each individual call, so
-     * threads contend only at the render step — the actual work between
-     * updates runs fully in parallel.
+     * ### Lock acquisition order
+     * When a log call and a bar render race, locks are always acquired in
+     * this order — never the reverse:
+     *   1. `bar_registry::mutex_`  (acquired by `log_print_guard`)
+     *   2. `progress_bar::mutex_`  (acquired inside `render()`)
      *
-     * Note: `multi_bar` uses the same single-mutex pattern and also exposes
-     * a thread-safe API. Prefer `multi_bar` when you have distinct named
-     * subtasks; use `progress_bar` for a single unified counter.
+     * `render_unlocked()` is called by the registry while holding (1) but
+     * not (2), writing directly to stdout without re-acquiring the bar mutex.
+     * This is what prevents deadlock when a worker thread holds (2) and races
+     * with a log call that holds (1).
      *
-     * Example (two threads sharing one bar):
+     * Example:
      * @code{.cpp}
      * mist::logger::progress_bar bar;
-     * std::atomic<int> counter{0};
-     * const int total = 1000;
-     *
-     * auto worker = [&]() {
-     *     while (true) {
-     *         int i = counter.fetch_add(1);
-     *         if (i >= total) break;
-     *         bar.update(i, total);   // safe from any thread
-     *         do_work(i);
-     *     }
-     * };
-     *
-     * std::thread t1(worker), t2(worker);
-     * t1.join(); t2.join();
+     * for (int i = 0; i <= 100; ++i)
+     * {
+     *     bar.update(i, 100);
+     *     do_work(i);
+     * }
      * bar.finish();
      * mist::logger::info("All done.");
      * @endcode
@@ -73,9 +69,8 @@ namespace mist::logger
         /**
          * @brief Drive by current + total — fraction computed internally.
          *
-         * Thread-safe: acquires the internal mutex for the duration of the
-         * call. Templated on any integral type so integer literals resolve
-         * unambiguously to this overload rather than the floating-point one.
+         * Thread-safe. Templated on any integral type so integer literals
+         * resolve unambiguously to this overload rather than the double one.
          */
         template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
         void update(T current, T total, bool flush = true)
@@ -83,51 +78,62 @@ namespace mist::logger
             if (total <= 0)
                 return;
             const float fraction = static_cast<float>(current) / static_cast<float>(total);
-            // Lock is acquired inside render() so the clamp + cast are done
-            // cheaply before we enter the critical section.
             render(std::clamp(fraction, 0.0f, 1.0f),
                    static_cast<int64_t>(current),
                    static_cast<int64_t>(total),
                    flush);
         }
 
-        /**
-         * @brief Drive by pre-computed fraction in [0.0, 1.0].
-         *
-         * Thread-safe: acquires the internal mutex for the duration of the
-         * call. Accepts float or double — floating-point literals resolve
-         * unambiguously here.
-         */
+        /** @brief Drive by pre-computed fraction in [0.0, 1.0]. Thread-safe. */
         void update(double fraction, bool flush = true);
 
         /**
          * @brief Commit the bar with a newline and stop the clock.
          *
-         * Thread-safe. Safe to call multiple times — no-op after the first,
-         * guarded by the same mutex so concurrent finish() calls cannot
-         * double-commit.
+         * Thread-safe. Safe to call multiple times — no-op after the first.
+         * Unregisters this bar from the global registry so subsequent log
+         * calls no longer trigger erase/redraw.
          */
         void finish(bool flush = true);
 
-        /**
-         * @brief Returns true if the bar is still running.
-         *
-         * Note: the value may change between the call and any subsequent use,
-         * so treat it as a snapshot rather than a guarantee. For sequencing
-         * logic, prefer relying on finish() being idempotent.
-         */
         [[nodiscard]] bool is_active() const
         {
             std::lock_guard<std::mutex> lk(mutex_);
             return active_;
         }
 
-    private:
-        using clock_t     = std::chrono::steady_clock;
-        using time_point  = std::chrono::time_point<clock_t>;
+        // -----------------------------------------------------------------
+        // Registry callbacks
+        // Called by bar_registry with its own mutex already held.
+        // MUST NOT acquire mutex_ — see lock acquisition order above.
+        // -----------------------------------------------------------------
 
-        // Mutable so is_active() can lock in a const context.
-        mutable std::mutex mutex_;
+        /**
+         * @brief How many terminal lines this bar currently occupies.
+         * Returns 0 if never rendered or already finished, 1 otherwise.
+         * Used by the registry to know how many lines to erase before printing.
+         */
+        [[nodiscard]] int rendered_line_count() const
+        {
+            return (suffix_width_ == -1 || !active_) ? 0 : 1;
+        }
+
+        /**
+         * @brief Redraw the bar without acquiring mutex_.
+         *
+         * Called by the registry after a log line has been printed, while
+         * the registry mutex is held. Acquiring mutex_ here would deadlock
+         * if a worker thread is mid-render (holds mutex_, blocked on the
+         * registry lock). The registry lock alone is sufficient to serialise
+         * this redraw against concurrent log calls.
+         */
+        void render_unlocked(bool flush);
+
+    private:
+        using clock_t    = std::chrono::steady_clock;
+        using time_point = std::chrono::time_point<clock_t>;
+
+        mutable std::mutex mutex_;  // mutable: locked in const methods
 
         bar_style  style_;
         bool       active_       = false;
@@ -138,12 +144,10 @@ namespace mist::logger
         [[nodiscard]] static std::string format_duration(double seconds);
 
         /**
-         * @brief Core render — acquires mutex_, then draws the bar.
+         * @brief Core render — acquires mutex_, draws the bar.
          *
-         * Called by both update() overloads after the fraction is computed.
-         * Separating the cheap arithmetic (done before the lock) from the
-         * render (done under the lock) minimises contention: threads only
-         * serialise at the actual terminal write, not at the division.
+         * On first call, registers this bar with the global registry so
+         * subsequent log calls trigger the erase/redraw protocol.
          */
         void render(float fraction,
                     std::optional<int64_t> current,

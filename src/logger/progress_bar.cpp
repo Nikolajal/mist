@@ -66,7 +66,7 @@ namespace mist::logger
             std::cout << std::flush;
         active_ = false;
         suffix_width_ = -1;
-        detail::set_update_mode(false);
+        detail::progress_bar_registry::instance().unregister_bar(this);
     }
 
     // ------------------------------------------------------------------
@@ -108,7 +108,7 @@ namespace mist::logger
             start_ = clock_t::now();
             active_ = true;
             suffix_width_ = -1; // reset so it gets fixed on first render
-            detail::set_update_mode(true);
+            detail::progress_bar_registry::instance().register_bar(this);
         }
 
         const double elapsed =
