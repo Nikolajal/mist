@@ -10,13 +10,13 @@ project(mist
 # Library target
 # ------------------------------------------------------------------
 
-add_library(mist
-    src/logger/logger_types.cpp
+add_library(mist STATIC
     src/logger/logger.cpp
+    src/logger/logger_types.cpp
     src/logger/progress_bar.cpp
+    src/logger/multi_progress_bar.cpp 
     src/logger/progress_bar_registry.cxx
     src/ring_finding/hough_transform.cpp
-    # rnd.h is header-only — no .cpp needed
 )
 
 target_include_directories(mist
