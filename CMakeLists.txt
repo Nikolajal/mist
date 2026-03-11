@@ -78,3 +78,29 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/mistConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mist
 )
+
+# ------------------------------------------------------------------
+# Tests  (off by default so downstream projects skip them)
+#
+# MIST_BUILD_TESTS is an *option* — a CMake boolean cache variable.
+# It defaults to OFF, so:
+#   • `add_subdirectory(mist)` in another project builds nothing extra.
+#   • Developers working on mist itself enable it explicitly:
+#       cmake -B build -DMIST_BUILD_TESTS=ON
+# ------------------------------------------------------------------
+
+option(MIST_BUILD_TESTS "Build mist test executables" OFF)
+
+if(MIST_BUILD_TESTS)
+    # Place all test binaries in <build>/bin/ for easy discovery.
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+    add_executable(test_logger test/logger.cxx)
+
+    target_link_libraries(test_logger PRIVATE mist::mist)
+
+    # Inherit the same C++17 requirement as the library.
+    target_compile_features(test_logger PRIVATE cxx_std_17)
+
+    message(STATUS "[mist] Tests enabled — binaries will land in ${CMAKE_BINARY_DIR}/bin")
+endif()
