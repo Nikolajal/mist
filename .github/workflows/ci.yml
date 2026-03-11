@@ -1,0 +1,75 @@
+# .github/workflows/ci.yml
+#
+# Runs on every pull request targeting main or dev, and on direct pushes to
+# those branches.  The job matrix builds and tests mist on three platforms
+# (Linux, macOS, Windows) so regressions on any OS are caught before merge.
+#
+# A PR must pass all matrix legs before it can be merged — enforce this by
+# setting this workflow as a required status check in the branch protection
+# rules of your repository (Settings → Branches → Add rule →
+# "Require status checks to pass before merging" → select "ci / build-and-test").
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]   # block merges into these branches on failure
+  push:
+    branches: [main, dev]   # also run on direct pushes so the badge stays current
+
+# Cancel any in-progress run for the same branch when a new commit is pushed.
+# This prevents queuing up stale builds when you force-push during review.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} / ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false   # let all legs finish so you see failures on every platform at once
+      matrix:
+        os:         [ubuntu-latest, macos-latest, windows-latest]
+        build_type: [Release, Debug]
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Check out the repository
+      # -----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Configure
+      #    -DMIST_BUILD_TESTS=ON compiles test/logger.cxx into build/bin/test_logger.
+      #    The flag defaults to OFF so downstream consumers are unaffected.
+      # -----------------------------------------------------------------------
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DMIST_BUILD_TESTS=ON
+
+      # -----------------------------------------------------------------------
+      # 3. Build
+      #    --parallel lets CMake pick the thread count automatically.
+      # -----------------------------------------------------------------------
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+      # -----------------------------------------------------------------------
+      # 4. Run tests
+      #    On Windows the binary lands in build/bin/<Config>/test_logger.exe;
+      #    on Unix it is build/bin/test_logger.  A non-zero exit code from the
+      #    binary causes the step — and therefore the whole job — to fail,
+      #    which blocks the PR from being merged.
+      # -----------------------------------------------------------------------
+      - name: Run tests (Unix)
+        if: runner.os != 'Windows'
+        run: ./build/bin/test_logger
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: ./build/bin/${{ matrix.build_type }}/test_logger.exe
