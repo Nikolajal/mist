@@ -194,7 +194,8 @@ namespace mist::logger
 
         _render_main(out);
 
-        if (active_count > 0)
+        const int total_subtasks_rendered = static_cast<int>(subtasks_.size());
+        if (total_subtasks_rendered > 0)
         {
             const int tw = _terminal_width();
             out += first_render ? "\n" : "\033[1B\r";
@@ -202,10 +203,8 @@ namespace mist::logger
 
             for (auto &s : subtasks_)
             {
-                if (!s->active_)
-                    continue;
                 out += first_render ? "\n" : "\033[1B\r";
-                _render_subtask(out, *s);
+                _render_subtask(out, *s); // render all — inactive shown at 100% dimmed
             }
         }
 
@@ -213,7 +212,7 @@ namespace mist::logger
         if (flush || first_render)
             std::cout << std::flush;
 
-        last_line_count_ = 1 + (active_count > 0 ? 1 + active_count : 0);
+        last_line_count_ = 1 + (total_subtasks_rendered > 0 ? 1 + total_subtasks_rendered : 0);
     }
 
     // -------------------------------------------------------------------------
