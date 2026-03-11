@@ -1,69 +1,81 @@
 #pragma once
 #include <mist/logger/logger_types.h>
-#include <mist/logger/progress_bar.h>
-#include <mist/logger/multi_progress_bar.h>
-#include <mist/logger/progress_bar_registry.h>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 /**
  * @file logger.h
  * @brief Free-function logging interface for the mist::logger subsystem.
  *
- * ### Bar-aware printing
- * All log functions are aware of any active `progress_bar` or
- * `multi_progress_bar`. Before printing, the active bar region is erased from
- * the terminal; after printing, it is redrawn below the new line. This keeps
- * log output readable while bars float at the bottom of the terminal.
- *
- * The entire erase → print → redraw sequence is atomic with respect to the
- * bar render mutex, so concurrent updates from worker threads cannot produce
- * visual artifacts.
- *
- * No call-site changes are needed — existing mist::logger::log() calls
- * just work correctly whether or not a bar is active.
+ * ### Anchored objects
+ * Any object that occupies a fixed band of terminal lines (progress bars,
+ * multi-bars, status panels) inherits from anchor_object and registers itself
+ * in a global list.  log() uses that list to know how many lines to erase
+ * before printing and redraw after, keeping log output above the anchored
+ * region at all times.
  */
 namespace mist::logger
 {
+    // ------------------------------------------------------------------
+    // Anchored-object registry
+    // ------------------------------------------------------------------
+
+    class anchor_object
+    {
+    public:
+        anchor_object();
+        virtual ~anchor_object();
+
+        anchor_object(const anchor_object &) = delete;
+        anchor_object &operator=(const anchor_object &) = delete;
+        anchor_object(anchor_object &&) = delete;
+        anchor_object &operator=(anchor_object &&) = delete;
+
+        [[nodiscard]] virtual int rendered_line_count() const = 0;
+        virtual void render_line() const = 0;
+
+        static int total_anchored_lines();
+        static void erase_all();
+        static void redraw_all();
+
+    private:
+        static std::vector<anchor_object *> &_registry();
+    };
+
     // ------------------------------------------------------------------
     // Level filter
     // ------------------------------------------------------------------
 
     void set_min_level(level_tag level);
     level_tag get_min_level();
+    bool check_level(level_tag level);
 
     // ------------------------------------------------------------------
-    // Core log function (implementation in logger.cpp)
+    // Core log functions
     // ------------------------------------------------------------------
 
-    /**
-     * @brief Emit a styled log line at the given level.
-     *
-     * Bar-aware: acquires the registry lock, erases any active bar, prints
-     * the message, then redraws the bar. Thread-safe.
-     */
     void log(level_tag tag, std::string_view msg, bool flush = true);
-
-    /** @brief Emit an unstyled message with custom colour/style. */
     void log(std::string_view msg,
              colour_tag c,
              std::initializer_list<style_tag> s = {style_tag::NONE});
 
     // ------------------------------------------------------------------
-    // Convenience wrappers — thin inline delegates to log()
+    // Convenience wrappers
     // ------------------------------------------------------------------
 
-    inline void error(const std::string &msg, bool flush = true) { log(level_tag::ERROR, msg, flush); }
-    inline void warning(const std::string &msg, bool flush = true) { log(level_tag::WARNING, msg, flush); }
-    inline void info(const std::string &msg, bool flush = true) { log(level_tag::INFO, msg, flush); }
-    inline void debug(const std::string &msg, bool flush = true) { log(level_tag::DEBUG, msg, flush); }
+    inline void error  (const std::string &msg, bool flush = true) { log(level_tag::ERROR,   msg, flush); }
+    inline void warning(const std::string &msg, bool flush = true) { log(level_tag::WARNING,  msg, flush); }
+    inline void info   (const std::string &msg, bool flush = true) { log(level_tag::INFO,     msg, flush); }
+    inline void debug  (const std::string &msg, bool flush = true) { log(level_tag::DEBUG,    msg, flush); }
+    inline void plain  (const std::string &msg, bool flush = true) { log(level_tag::PLAIN,    msg, flush); }
 
     // ------------------------------------------------------------------
-    // In-place update line (for simple single-line progress, not bars)
+    // In-place update line
     // ------------------------------------------------------------------
 
-    void update(std::string_view msg, bool flush = true);
-    void end_update(bool flush = true);
+    void update(std::string update_name, std::string_view msg, bool flush = true);
+    void end_update(std::string update_name, bool flush = true);
 
 } // namespace mist::logger

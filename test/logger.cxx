@@ -2,193 +2,90 @@
  * @file test/logger.cxx
  * @brief Manual smoke-test / demo for the mist::logger subsystem.
  *
- * This file serves two purposes:
- *   1. TESTS  — automated checks that run silently and return exit code 1
- *               on any failure (suitable for CI).
- *   2. DEMO   — a visual terminal walkthrough that runs only when all
- *               tests pass, so you can see the logger and progress bar
- *               working in a real TTY.
- *
- * There is intentionally no external test framework (no Catch2, no GTest).
- * The entire harness is ~10 lines of macros and counters, keeping the
- * build dependency-free.
- *
  * Build with:
  *   cmake -B build -DMIST_BUILD_TESTS=ON && cmake --build build
  * Run with:
  *   ./build/bin/test_logger
  */
 
-// ============================================================================
-// Includes
-// ============================================================================
+#include <mist/logger/logger.h>
+#include <mist/logger/progress_bar.h>
+#include <mist/logger/multi_progress_bar.h>
 
-// --- mist library headers (the code under test) ---
-#include <mist/logger/logger.h>               // log(), info(), error(), …, set_min_level()
-#include <mist/logger/progress_bar.h>         // progress_bar class
-#include <mist/logger/progress_bar_registry.h>// singleton registry that ties bars to log output
+#include <cassert>
+#include <chrono>
+#include <iostream>
+#include <sstream>
+#include <thread>
 
-// --- Standard library ---
-#include <cassert>    // not actually used by CHECK, but available if needed
-#include <chrono>     // std::chrono::milliseconds — used in the visual demo
-#include <iostream>   // std::cout, std::cerr
-#include <sstream>    // std::ostringstream — used by capture_streams
-#include <thread>     // std::this_thread::sleep_for — used in the visual demo
+// ---------------------------------------------------------------------------
+// Minimal test harness — no external dependencies
+// ---------------------------------------------------------------------------
 
-// ============================================================================
-// Minimal test harness
-// ============================================================================
-//
-// Two file-scope counters track how many assertions have been attempted and
-// how many have failed. They are `static` so they are private to this
-// translation unit (no risk of name collision if other .cxx files are added).
+static int s_tests_run = 0;
+static int s_tests_failed = 0;
 
-static int s_tests_run    = 0;  // incremented on every CHECK call
-static int s_tests_failed = 0;  // incremented only when an assertion fails
-
-/**
- * CHECK(expr) — the one assertion macro.
- *
- * Usage:
- *   CHECK(some_condition);
- *   CHECK(get_value() == expected);
- *
- * On success: increments s_tests_run and does nothing else.
- * On failure: increments both counters and prints a diagnostic to stderr
- *             that includes the file name, line number, and the exact
- *             source text of the failing expression.
- *
- * Implementation notes:
- *
- *   do { } while (false)
- *     Wraps the body in a single compound statement so the macro is safe
- *     to use after `if`, `else`, etc. without needing extra braces at the
- *     call site.  The trailing semicolon at the call site is consumed by
- *     `while (false);`.
- *
- *   #expr  (stringification)
- *     The preprocessor # operator converts the token sequence passed as
- *     `expr` into a string literal at compile time, e.g.
- *       CHECK(x == 3)  →  prints  "x == 3"
- *     This makes failure messages self-documenting.
- *
- *   __FILE__ and __LINE__
- *     Predefined macros replaced by the preprocessor with the source file
- *     path and line number *at the call site*.  A regular function could
- *     not do this — it would always report its own location instead.
- */
-#define CHECK(expr)                                                          \
-    do {                                                                     \
-        ++s_tests_run;                                                       \
-        if (!(expr)) {                                                       \
-            ++s_tests_failed;                                                \
-            std::cerr << "  FAIL  " << __FILE__ << ":" << __LINE__          \
-                      << "  " << #expr << "\n";                             \
-        }                                                                    \
+#define CHECK(expr)                                                \
+    do                                                             \
+    {                                                              \
+        ++s_tests_run;                                             \
+        if (!(expr))                                               \
+        {                                                          \
+            ++s_tests_failed;                                      \
+            std::cerr << "  FAIL  " << __FILE__ << ":" << __LINE__ \
+                      << "  " << #expr << "\n";                    \
+        }                                                          \
     } while (false)
 
-// ============================================================================
-// capture_streams — RAII helper for redirecting stdout/stderr
-// ============================================================================
-//
-// Several tests need to inspect what the logger actually wrote.  The standard
-// way to do this without forking a process is to swap the stream buffers
-// (rdbuf) for in-memory string buffers, run the code under test, then read
-// back the captured text.
-//
-// This struct uses RAII (Resource Acquisition Is Initialisation): the
-// redirection happens in the constructor and is automatically undone in the
-// destructor, even if the test throws.  This guarantees the real terminal
-// streams are always restored.
-
+// ---------------------------------------------------------------------------
+// Helper: redirect std::cout / std::cerr to a string buffer for inspection
+// ---------------------------------------------------------------------------
 struct capture_streams
 {
-    // In-memory buffers that receive output during the capture window
     std::ostringstream cout_buf, cerr_buf;
-
-    // Pointers to the *original* buffers — saved so we can restore them
     std::streambuf *old_cout, *old_cerr;
 
-    // Constructor: install the in-memory buffers and disable ANSI colour.
-    //
-    // std::cout.rdbuf(new_buf) atomically installs new_buf as the active
-    // buffer *and* returns a pointer to the previous buffer, which we save
-    // for restoration.  Same for std::cerr.
-    //
-    // Colour is disabled because ANSI escape sequences (\033[31m etc.) would
-    // clutter the captured strings and make substring searches unreliable.
     capture_streams()
-        : old_cout(std::cout.rdbuf(cout_buf.rdbuf())),  // redirect cout → cout_buf
-          old_cerr(std::cerr.rdbuf(cerr_buf.rdbuf()))   // redirect cerr → cerr_buf
+        : old_cout(std::cout.rdbuf(cout_buf.rdbuf())),
+          old_cerr(std::cerr.rdbuf(cerr_buf.rdbuf()))
     {
-        mist::logger::set_colour_enabled(false); // plain text only while capturing
+        // Force colour off so we capture plain text without ANSI escapes
+        mist::logger::set_colour_enabled(false);
     }
 
-    // Destructor: restore the real streams and re-enable colour.
-    // Called automatically when the capture_streams object goes out of scope.
     ~capture_streams()
     {
-        std::cout.rdbuf(old_cout); // restore real stdout
-        std::cerr.rdbuf(old_cerr); // restore real stderr
+        std::cout.rdbuf(old_cout);
+        std::cerr.rdbuf(old_cerr);
         mist::logger::set_colour_enabled(true);
     }
 };
 
-// ============================================================================
-// Individual test functions
-// ============================================================================
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
-// ----------------------------------------------------------------------------
-// test_level_filter
-//
-// Concept: the logger has a global minimum level.  Only messages whose level
-// is <= the minimum are actually printed.  Levels in order:
-//   ERROR(0) < WARNING(1) < INFO(2) < DEBUG(3) < PROGRESS(4) < PLAIN(5)
-//
-// This test only checks the getter/setter round-trip — not the filtering
-// behaviour itself (that is covered by test_debug_filtered_below_min_level).
-// ----------------------------------------------------------------------------
 void test_level_filter()
 {
-    // Set the minimum to INFO and verify the getter reflects the change
+    // set_min_level / get_min_level round-trip
     mist::logger::set_min_level(mist::logger::level_tag::INFO);
     CHECK(mist::logger::get_min_level() == mist::logger::level_tag::INFO);
 
-    // Set it back to DEBUG (most verbose) and verify again
     mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
     CHECK(mist::logger::get_min_level() == mist::logger::level_tag::DEBUG);
 }
 
-// ----------------------------------------------------------------------------
-// test_log_output_reaches_cout
-//
-// Verifies that info() (and by implication all non-error levels) writes to
-// stdout, not to some other stream or to nowhere.
-// ----------------------------------------------------------------------------
 void test_log_output_reaches_cout()
 {
-    capture_streams cap; // start capturing; ANSI colour disabled inside
+    capture_streams cap;
 
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG); // allow all levels
+    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
     mist::logger::info("hello info");
 
-    // cap.cout_buf.str() returns everything written to cout since capture started
     const std::string out = cap.cout_buf.str();
-
-    // The literal payload must appear somewhere in the output.
-    // We use find() rather than == because the logger wraps the message in
-    // prefix labels and (when enabled) ANSI escapes.
     CHECK(out.find("hello info") != std::string::npos);
-} // cap destructor restores streams here
+}
 
-// ----------------------------------------------------------------------------
-// test_error_and_warning_go_to_cerr
-//
-// Errors and warnings are conventionally written to stderr (std::cerr) so
-// they are not mixed into pipeline stdout.  This test asserts that routing.
-// It also checks the negative — that they do NOT appear on stdout — to catch
-// a hypothetical bug where a message is accidentally written to both.
-// ----------------------------------------------------------------------------
 void test_error_and_warning_go_to_cerr()
 {
     capture_streams cap;
@@ -196,168 +93,304 @@ void test_error_and_warning_go_to_cerr()
     mist::logger::error("something broke");
     mist::logger::warning("be careful");
 
-    const std::string err = cap.cerr_buf.str(); // everything on stderr
-
-    // Both messages must be on stderr
+    const std::string err = cap.cerr_buf.str();
     CHECK(err.find("something broke") != std::string::npos);
-    CHECK(err.find("be careful")      != std::string::npos);
-
-    // And must NOT appear on stdout
+    CHECK(err.find("be careful") != std::string::npos);
+    // Neither should appear on stdout
     CHECK(cap.cout_buf.str().find("something broke") == std::string::npos);
 }
 
-// ----------------------------------------------------------------------------
-// test_debug_filtered_below_min_level
-//
-// When the minimum level is INFO, a DEBUG message (which is more verbose /
-// lower priority) must be silently dropped — nothing should be written.
-// ----------------------------------------------------------------------------
 void test_debug_filtered_below_min_level()
 {
     capture_streams cap;
 
-    mist::logger::set_min_level(mist::logger::level_tag::INFO); // only INFO and above
-    mist::logger::debug("should be hidden");                     // DEBUG < INFO → filtered
+    mist::logger::set_min_level(mist::logger::level_tag::INFO);
+    mist::logger::debug("should be hidden");
 
-    // stdout must be empty — the message was swallowed before printing
     CHECK(cap.cout_buf.str().find("should be hidden") == std::string::npos);
 
-    // Restore to DEBUG so subsequent tests are not affected by this state change
+    // Restore
     mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
 }
 
-// ----------------------------------------------------------------------------
-// test_colour_tag_roundtrip
-//
-// The ansi() helper builds ANSI SGR escape sequences.  When colour is enabled
-// the result must contain "\033[" (ESC + '[', the standard SGR introducer).
-// When colour is disabled it must return an empty string so log output piped
-// to a file is never polluted with raw escape codes.
-// ----------------------------------------------------------------------------
 void test_colour_tag_roundtrip()
 {
-    // --- Colour ON ---
     mist::logger::set_colour_enabled(true);
     const std::string seq = mist::logger::ansi(mist::logger::colour_tag::RED,
                                                {mist::logger::style_tag::BOLD});
-    // \033 is the octal escape for the ESC character (ASCII 27).
-    // All ANSI CSI sequences start with ESC followed by '['.
+    // With colour enabled the sequence must contain the ESC introducer
     CHECK(seq.find("\033[") != std::string::npos);
 
-    // --- Colour OFF ---
     mist::logger::set_colour_enabled(false);
     const std::string empty = mist::logger::ansi(mist::logger::colour_tag::RED);
-    CHECK(empty.empty()); // must produce nothing when colour is disabled
+    CHECK(empty.empty());
 
-    // Restore for the tests that follow
     mist::logger::set_colour_enabled(true);
 }
 
-// ----------------------------------------------------------------------------
-// test_convenience_wrappers_compile_and_run
-//
-// error(), warning(), info(), and debug() are inline wrappers around log().
-// This test is intentionally trivial: its only goal is to prove that all four
-// wrappers compile and execute without crashing.  If any wrapper had a
-// signature mismatch or called an undefined function the build itself would
-// fail, or the test would crash at runtime.
-//
-// CHECK(true) at the end is a sentinel — it contributes one entry to the
-// "tests run" counter so this function is always visible in the summary, even
-// though there is nothing to assert beyond "we got here".
-// ----------------------------------------------------------------------------
 void test_convenience_wrappers_compile_and_run()
 {
-    capture_streams cap; // suppress output so it doesn't clutter the terminal
+    // Just verify all four wrappers can be called without crashing
+    capture_streams cap;
     mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
-
-    mist::logger::error("e");    // routes to stderr
-    mist::logger::warning("w");  // routes to stderr
-    mist::logger::info("i");     // routes to stdout
-    mist::logger::debug("d");    // routes to stdout
-
-    CHECK(true); // if we reach this line, all four wrappers worked
+    mist::logger::error("e");
+    mist::logger::warning("w");
+    mist::logger::info("i");
+    mist::logger::debug("d");
+    // If we reach here the wrappers work
+    CHECK(true);
 }
 
-// ----------------------------------------------------------------------------
-// test_progress_bar_basic
-//
-// Smoke-test for progress_bar.  The class has no trivial boolean state we can
-// inspect from outside, so the test only verifies that:
-//   1. Construction, update(), and finish() do not crash or throw.
-//   2. The destructor (end of inner scope) also runs cleanly.
-//
-// The bar is driven inside a capture_streams scope so its terminal escape
-// sequences go to the in-memory buffer rather than the real terminal.
-//
-// flush=false is passed to update() and finish() to avoid blocking on I/O
-// inside the captured buffer — in a non-TTY context flush has no meaningful
-// effect, but it avoids any potential timing issues.
-// ----------------------------------------------------------------------------
 void test_progress_bar_basic()
 {
+    // Smoke-test: create a bar, drive it to completion, verify no crash.
+    // progress_bar takes only a bar_style; progress is driven via update(current, total).
     capture_streams cap;
 
     {
-        mist::logger::progress_bar bar; // default style (BLOCK)
-
-        // Drive from 0/10 to 10/10.  The integral template overload computes
-        // fraction = current / total internally, clamped to [0, 1].
+        mist::logger::progress_bar bar;
         for (int i = 0; i <= 10; ++i)
             bar.update(i, 10, /*flush=*/false);
+        bar.finish(/*flush=*/false);
+    }
 
-        bar.finish(/*flush=*/false); // commit the bar, print a newline, unregister
-    } // bar destructor runs here — safe because finish() was already called
-
-    CHECK(true); // sentinel: reaching here confirms no crash or exception
+    CHECK(true); // reaching here means no crash / exception
 }
 
-// ============================================================================
-// Visual demo
-// ============================================================================
-//
-// This runs only when every test passes (see main()).  Unlike the tests above,
-// it deliberately writes to the real terminal so you can see the styled output
-// and the animated progress bar.  It is not a test — it has no assertions.
+void test_update_anchor_basic()
+{
+    // update() should appear on stdout; end_update() should commit it.
+    capture_streams cap;
+
+    mist::logger::update("foo", "step 1");
+    mist::logger::update("foo", "step 2");
+    mist::logger::end_update("foo");
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("foo") != std::string::npos);
+    CHECK(out.find("step 2") != std::string::npos);
+    // "step 1" may have been overwritten in-place, so we don't require it
+}
+
+void test_update_anchor_end_noop()
+{
+    // end_update() on a name that was never update()'d should be a no-op.
+    capture_streams cap;
+    mist::logger::end_update("nonexistent"); // must not crash
+    CHECK(true);
+}
+
+void test_update_anchor_resurrection_warning()
+{
+    // Calling update() after end_update() on the same name should emit
+    // exactly one [WARNING] to stderr, then recreate the anchor normally.
+    capture_streams cap;
+    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+
+    mist::logger::update("bar", "first life");
+    mist::logger::end_update("bar");
+
+    // First call after end — should warn
+    mist::logger::update("bar", "second life");
+    const std::string err_after_first = cap.cerr_buf.str();
+    CHECK(err_after_first.find("bar") != std::string::npos);
+    CHECK(err_after_first.find("WARNING") != std::string::npos);
+
+    // Second call — no additional warning (warning fires once per resurrection)
+    mist::logger::update("bar", "still second life");
+    const std::string err_after_second = cap.cerr_buf.str();
+    // Count occurrences of "WARNING" — should still be just one
+    size_t count = 0, pos = 0;
+    while ((pos = err_after_second.find("WARNING", pos)) != std::string::npos)
+    {
+        ++count;
+        ++pos;
+    }
+    CHECK(count == 1);
+
+    mist::logger::end_update("bar");
+}
+
+void test_progress_bar_with_update_anchor()
+{
+    // Smoke-test: bar and a named update anchor can coexist without crashing.
+    capture_streams cap;
+
+    mist::logger::progress_bar bar;
+    for (int i = 0; i <= 5; ++i)
+    {
+        mist::logger::update("task", "step " + std::to_string(i));
+        bar.update(i, 5, /*flush=*/false);
+    }
+    bar.finish(/*flush=*/false);
+    mist::logger::end_update("task");
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("task") != std::string::npos);
+    CHECK(out.find("step 5") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// multi_progress_bar tests
+// ---------------------------------------------------------------------------
+
+void test_multi_progress_bar_basic()
+{
+    // Smoke-test: create a multi-bar, drive it to completion, no crash.
+    capture_streams cap;
+
+    mist::logger::multi_progress_bar multi;
+    auto &a = multi.add_subtask("task A");
+    auto &b = multi.add_subtask("task B");
+
+    for (int i = 0; i <= 10; ++i)
+    {
+        a.update(i, 10, /*flush=*/false);
+        b.update(i, 10, /*flush=*/false);
+        multi.update(i, 10, /*flush=*/false);
+    }
+    a.finish(/*flush=*/false);
+    b.finish(/*flush=*/false);
+    multi.finish(/*flush=*/false);
+
+    CHECK(true);
+}
+
+void test_multi_progress_bar_subtask_output()
+{
+    // Verify subtask tags appear in output.
+    capture_streams cap;
+
+    mist::logger::multi_progress_bar multi;
+    auto &a = multi.add_subtask("alpha");
+    auto &b = multi.add_subtask("beta");
+
+    a.update(5, 10, /*flush=*/false);
+    b.update(3, 10, /*flush=*/false);
+    multi.update(4, 10, /*flush=*/false);
+    a.finish(/*flush=*/false);
+    b.finish(/*flush=*/false);
+    multi.finish(/*flush=*/false);
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("alpha") != std::string::npos);
+    CHECK(out.find("beta") != std::string::npos);
+}
+
+void test_multi_progress_bar_with_log()
+{
+    // log() calls while a multi-bar is active must not crash.
+    capture_streams cap;
+    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+
+    mist::logger::multi_progress_bar multi;
+    auto &t = multi.add_subtask("work");
+
+    for (int i = 0; i <= 5; ++i)
+    {
+        mist::logger::debug("tick " + std::to_string(i));
+        t.update(i, 5, /*flush=*/false);
+        multi.update(i, 5, /*flush=*/false);
+    }
+    t.finish(/*flush=*/false);
+    multi.finish(/*flush=*/false);
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("work") != std::string::npos);
+}
+
+void test_multi_progress_bar_independent_subtask_progress()
+{
+    // Subtasks can advance at different rates independently.
+    capture_streams cap;
+
+    mist::logger::multi_progress_bar multi;
+    auto &fast = multi.add_subtask("fast");
+    auto &slow = multi.add_subtask("slow");
+
+    for (int i = 0; i <= 10; ++i)
+    {
+        fast.update(i, 10, /*flush=*/false);
+        slow.update(i / 2, 10, /*flush=*/false);
+        multi.update(i, 10, /*flush=*/false);
+    }
+    fast.finish(/*flush=*/false);
+    slow.finish(/*flush=*/false);
+    multi.finish(/*flush=*/false);
+
+    CHECK(true);
+}
 
 void demo_visual()
 {
     mist::logger::set_colour_enabled(true);
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG); // show all levels
+    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
 
-    // Show one line per level so the colours and labels are all visible
     std::cout << "\n--- mist::logger visual demo ---\n";
     mist::logger::error("This is an error message");
     mist::logger::warning("This is a warning message");
     mist::logger::info("This is an info message");
     mist::logger::debug("This is a debug message");
+    mist::logger::plain("This is a plain message");
 
-    // Animate a progress bar at ~100 fps with 10ms sleep per step.
-    // flush=false during the loop avoids a system-call per tick;
-    // finish() does a final flush when the bar commits.
-    std::cout << "\n--- progress bar demo (100 steps) ---\n";
+    mist::logger::plain("--- progress trackers demo ---");
+
+    // Loop 1: two named update anchors
+    for (int i = 0; i <= 10; ++i)
     {
-        mist::logger::progress_bar bar;
-        for (int i = 0; i <= 100; ++i)
-        {
-            bar.update(i, 100, /*flush=*/false);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        bar.finish(); // final flush + newline
+        mist::logger::debug("debug message — anchor pinned below");
+        mist::logger::update("test", "testing: " + std::to_string(i));
+        if (i > 5)
+            mist::logger::update("second test", "testing: " + std::to_string(i));
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
-    std::cout << '\n';
+    mist::logger::end_update("test");
+    mist::logger::end_update("second test");
+
+    mist::logger::debug("All update anchors finished.");
+
+    // Loop 2: progress bar + named update anchor together
+    mist::logger::progress_bar bar;
+    for (int i = 0; i <= 10; ++i)
+    {
+        mist::logger::debug("debug message — bar and anchor pinned below");
+        mist::logger::update("test", "testing: " + std::to_string(i));
+        bar.update(i, 10, false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    bar.finish();
+    mist::logger::end_update("test");
+
+    // Loop 3: multi-progress bar with two subtasks
+    mist::logger::plain("--- multi progress bar demo ---");
+    {
+        mist::logger::multi_progress_bar multi;
+        auto &a = multi.add_subtask("loader");
+        auto &b = multi.add_subtask("parser");
+
+        for (int i = 0; i <= 10; ++i)
+        {
+            mist::logger::debug("debug message — multi-bar pinned below");
+            a.update(i, 10, false);
+            b.update(i, 20, false);
+            multi.update(i, 10, false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        a.finish();
+        b.finish();
+        multi.finish();
+    }
+    mist::logger::info("All done.");
 }
 
-// ============================================================================
+// ---------------------------------------------------------------------------
 // Entry point
-// ============================================================================
+// ---------------------------------------------------------------------------
 
 int main()
 {
     std::cout << "Running mist::logger tests...\n";
 
-    // Run every test function in sequence.  Each one calls CHECK one or more
-    // times, accumulating results in s_tests_run / s_tests_failed.
     test_level_filter();
     test_log_output_reaches_cout();
     test_error_and_warning_go_to_cerr();
@@ -365,16 +398,23 @@ int main()
     test_colour_tag_roundtrip();
     test_convenience_wrappers_compile_and_run();
     test_progress_bar_basic();
+    test_update_anchor_basic();
+    test_update_anchor_end_noop();
+    test_update_anchor_resurrection_warning();
+    test_progress_bar_with_update_anchor();
+    test_multi_progress_bar_basic();
+    test_multi_progress_bar_subtask_output();
+    test_multi_progress_bar_with_log();
+    test_multi_progress_bar_independent_subtask_progress();
 
-    // Print the final tally
-    std::cout << s_tests_run    << " tests run, "
+    std::cout << s_tests_run << " tests run, "
               << s_tests_failed << " failed.\n";
 
     if (s_tests_failed == 0)
     {
         std::cout << "All tests passed.\n";
-        demo_visual(); // only reached when everything is green
-        return 0;      // exit code 0 = success (important for CI / install script)
+        demo_visual();
+        return 0;
     }
-    return 1; // exit code 1 = at least one assertion failed
+    return 1;
 }

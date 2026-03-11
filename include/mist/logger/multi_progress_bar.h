@@ -1,13 +1,11 @@
 #pragma once
 #include <mist/logger/progress_bar.h>
-#include <mist/logger/progress_bar_registry.h>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
-#include <array>
 
 namespace mist::logger
 {
@@ -65,7 +63,7 @@ namespace mist::logger
     // =========================================================================
     // multi_progress_bar
     // =========================================================================
-    class multi_progress_bar
+    class multi_progress_bar : public anchor_object
     {
     public:
         explicit multi_progress_bar(bar_style style = bar_style::BLOCK);
@@ -93,14 +91,14 @@ namespace mist::logger
 
         [[nodiscard]] bool is_active() const { return active_; }
 
-        [[nodiscard]] int rendered_line_count() const
+        // anchor_object interface
+        [[nodiscard]] int rendered_line_count() const override
         {
-            if (last_line_count_ == 0 || !active_)
-                return 0;
+            // Returns how many lines are currently on screen.
+            // active_ controls redrawing (render_line), not erasing.
             return last_line_count_;
         }
-
-        void render_unlocked(bool flush);
+        void render_line() const override;
 
     private:
         friend class subtask_progress_bar;
@@ -108,12 +106,17 @@ namespace mist::logger
         using clock_t = std::chrono::steady_clock;
         using time_point = std::chrono::time_point<clock_t>;
 
-        void _subtask_updated_locked(const subtask_progress_bar *who, bool flush);
-        void _subtask_finished_locked(subtask_progress_bar *who, bool flush);
+        void _subtask_updated_locked(const subtask_progress_bar *who,
+                                     std::unique_lock<std::mutex> &lk, bool flush);
+        void _subtask_finished_locked(subtask_progress_bar *who,
+                                      std::unique_lock<std::mutex> &lk, bool flush);
         void _set_main_fraction(float frac, bool flush);
 
-        // THE ONE AND ONLY declaration — second arg defaults to false
-        void _render_all_locked(bool flush, bool skip_erase = false);
+        // _update_state_locked: update internal fields (call with mutex_ held).
+        // _draw_locked:         emit all bar lines at the current cursor position,
+        //                       no cursor movement — anchor_object owns that.
+        void _update_state_locked(float frac);
+        void _draw_locked();
 
         void _render_main(std::string &out) const;
         void _render_subtask(std::string &out, const subtask_progress_bar &s) const;

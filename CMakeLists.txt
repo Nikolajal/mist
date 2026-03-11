@@ -15,7 +15,6 @@ add_library(mist STATIC
     src/logger/logger_types.cxx
     src/logger/progress_bar.cxx
     src/logger/multi_progress_bar.cxx 
-    src/logger/progress_bar_registry.cxx
     src/ring_finding/hough_transform.cxx
 )
 
