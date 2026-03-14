@@ -107,6 +107,20 @@ namespace mist::logger
         if (flush) std::cout << std::flush;
     }
 
+    void multi_progress_bar::set_header(std::string tag, std::string_view msg, bool flush)
+    {
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            header_mode_ = !tag.empty();
+            header_tag_  = std::move(tag);
+            header_msg_  = std::string(msg);
+            _update_state_locked(main_fraction_);
+        }
+        anchor_object::erase_all();
+        anchor_object::redraw_all();
+        if (flush) std::cout << std::flush;
+    }
+
     void multi_progress_bar::finish(bool flush)
     {
         {
@@ -215,7 +229,8 @@ namespace mist::logger
     {
         if (!who->active_)
             return;
-        who->active_ = false;
+        who->active_   = false;
+        who->fraction_ = 1.0f;
         ++finished_count_;
         _update_state_locked(main_fraction_);
         lk.unlock();
@@ -240,6 +255,17 @@ namespace mist::logger
     // =========================================================================
     void multi_progress_bar::_render_main(std::string &out) const
     {
+        if (header_mode_)
+        {
+            out += "\033[2K\r";
+            out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD, style_tag::UNDERLINE});
+            out += "[" + header_tag_ + "]";
+            out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE});
+            out += " " + header_msg_;
+            out += ansi();
+            return;
+        }
+
         const double elapsed =
             std::chrono::duration<double>(clock_t::now() - start_).count();
 

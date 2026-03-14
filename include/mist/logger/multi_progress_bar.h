@@ -89,6 +89,17 @@ namespace mist::logger
         void update(double fraction, bool flush = true);
         void finish(bool flush = true);
 
+        /**
+         * @brief Switch the main bar to a plain text header line.
+         *
+         * Instead of the [PROGRESS] bar, the first line is rendered as
+         * `[tag] msg`.  Useful when overall progress is not meaningful but
+         * a running status label is needed above the subtask bars.
+         * Calling set_header() again updates the text in-place.
+         * Pass an empty @p tag to restore the default progress-bar mode.
+         */
+        void set_header(std::string tag, std::string_view msg = "", bool flush = true);
+
         [[nodiscard]] bool is_active() const { return active_; }
 
         // anchor_object interface
@@ -127,9 +138,14 @@ namespace mist::logger
 
         mutable std::mutex mutex_;
 
-        bar_style style_;
-        bool active_ = false;
-        time_point start_;
+        bar_style   style_;
+        bool        active_ = false;
+        time_point  start_;
+
+        // header-only mode (replaces the main [PROGRESS] bar)
+        bool        header_mode_ = false;
+        std::string header_tag_;
+        std::string header_msg_;
 
         float main_fraction_ = 0.0f;
         int finished_count_ = 0;
