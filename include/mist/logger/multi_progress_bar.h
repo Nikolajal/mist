@@ -1,0 +1,201 @@
+#pragma once
+#include <mist/logger/progress_bar.h>
+#include <chrono>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace mist::logger
+{
+    class multi_progress_bar;
+
+    // =========================================================================
+    // subtask_progress_bar
+    // =========================================================================
+
+    /**
+     * @brief A single subtask bar owned by a multi_progress_bar.
+     *
+     * Obtained by calling multi_progress_bar::add_subtask().  Do NOT
+     * construct directly.  The lifetime is managed by the parent
+     * multi_progress_bar.
+     */
+    class subtask_progress_bar
+    {
+    public:
+        /**
+         * @brief Drive by current + total.
+         */
+        template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+        void update(T current, T total, bool flush = true)
+        {
+            if (total <= 0) return;
+            const float frac = static_cast<float>(current) / static_cast<float>(total);
+            _update_impl(std::clamp(frac, 0.0f, 1.0f),
+                         static_cast<int64_t>(current),
+                         static_cast<int64_t>(total),
+                         flush);
+        }
+
+        /** @brief Drive by pre-computed fraction in [0.0, 1.0]. */
+        void update(double fraction, bool flush = true);
+
+        /** @brief Mark this subtask as finished. */
+        void finish(bool flush = true);
+
+        [[nodiscard]] bool               is_active() const { return active_; }
+        [[nodiscard]] const std::string &tag()       const { return tag_; }
+
+    private:
+        friend class multi_progress_bar;
+
+        subtask_progress_bar(std::string tag, multi_progress_bar &parent)
+            : tag_(std::move(tag)), parent_(parent) {}
+
+        subtask_progress_bar(const subtask_progress_bar &) = delete;
+        subtask_progress_bar &operator=(const subtask_progress_bar &) = delete;
+        subtask_progress_bar(subtask_progress_bar &&) = delete;
+        subtask_progress_bar &operator=(subtask_progress_bar &&) = delete;
+
+        void _update_impl(float fraction,
+                          std::optional<int64_t> current,
+                          std::optional<int64_t> total,
+                          bool flush);
+
+        std::string         tag_;
+        multi_progress_bar &parent_;
+
+        float   fraction_ = 0.0f;
+        int64_t current_  = 0;
+        int64_t total_    = 0;
+        bool    active_   = true;
+    };
+
+    // =========================================================================
+    // multi_progress_bar
+    // =========================================================================
+
+    /**
+     * @brief A main progress bar with an arbitrary number of subtask bars.
+     *
+     * Inherits anchor_object — all subtask bars and the main bar together
+     * occupy a fixed band of terminal lines.  log() calls automatically
+     * erase and redraw the entire multi-bar region so log output appears
+     * above it.
+     *
+     * Example:
+     * @code{.cpp}
+     * mist::logger::multi_progress_bar multi;
+     * auto &qa_bar  = multi.add_subtask("QA pre  ");
+     * auto &iter_bar = multi.add_subtask("iterations");
+     *
+     * for (int i = 0; i < n_spills; ++i) {
+     *     qa_bar.update(i, n_spills);
+     *     do_qa(i);
+     * }
+     * qa_bar.finish();
+     *
+     * for (int it = 0; it < kMaxIter; ++it) {
+     *     iter_bar.update(it, kMaxIter);
+     *     do_iteration(it);
+     * }
+     * multi.finish();
+     * @endcode
+     */
+    class multi_progress_bar : public anchor_object
+    {
+    public:
+        explicit multi_progress_bar(bar_style style = bar_style::BLOCK);
+
+        multi_progress_bar(const multi_progress_bar &) = delete;
+        multi_progress_bar &operator=(const multi_progress_bar &) = delete;
+        multi_progress_bar(multi_progress_bar &&) = delete;
+        multi_progress_bar &operator=(multi_progress_bar &&) = delete;
+
+        ~multi_progress_bar() override;
+
+        /** @brief Add a new subtask bar and return a reference to it. */
+        subtask_progress_bar &add_subtask(std::string tag);
+
+        /**
+         * @brief Drive the main bar by current + total.
+         */
+        template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+        void update(T current, T total, bool flush = true)
+        {
+            if (total <= 0) return;
+            const float frac = static_cast<float>(current) / static_cast<float>(total);
+            _set_main_fraction(std::clamp(frac, 0.0f, 1.0f), flush);
+        }
+
+        /** @brief Drive the main bar by pre-computed fraction in [0.0, 1.0]. */
+        void update(double fraction, bool flush = true);
+
+        /** @brief Commit the entire multi-bar (main + subtasks) as scrolling output. */
+        void finish(bool flush = true);
+
+        /**
+         * @brief Switch the main bar to a plain text header line.
+         *
+         * Instead of the [PROGRESS] bar, the first line is rendered as
+         * `[tag] msg`.  Useful when overall progress is not meaningful but
+         * a running status label is needed above the subtask bars.
+         * Calling set_header() again updates the text in-place.
+         * Pass an empty @p tag to restore the default progress-bar mode.
+         */
+        void set_header(std::string tag, std::string_view msg = "", bool flush = true);
+
+        [[nodiscard]] bool is_active() const { return active_; }
+
+        // anchor_object interface
+        [[nodiscard]] int rendered_line_count() const override { return last_line_count_; }
+        void render_line() const override;
+
+    private:
+        friend class subtask_progress_bar;
+
+        using clock_t    = std::chrono::steady_clock;
+        using time_point = std::chrono::time_point<clock_t>;
+
+        void _subtask_updated_locked(const subtask_progress_bar *who,
+                                     std::unique_lock<std::mutex> &lk, bool flush);
+        void _subtask_finished_locked(subtask_progress_bar *who,
+                                      std::unique_lock<std::mutex> &lk, bool flush);
+        void _set_main_fraction(float frac, bool flush);
+
+        void _update_state_locked(float frac);
+        void _draw_locked();
+
+        void _render_main(std::string &out) const;
+        void _render_subtask(std::string &out, const subtask_progress_bar &s) const;
+        static void _emit_line(std::string &out, const std::string &line, int term_width);
+
+        [[nodiscard]] static int         _terminal_width();
+        [[nodiscard]] static std::string _format_duration(double seconds);
+
+        mutable std::mutex mutex_;
+
+        bar_style  style_;
+        bool       active_ = false;
+        time_point start_;
+
+        bool        header_mode_ = false;
+        std::string header_tag_;
+        std::string header_msg_;
+
+        float main_fraction_  = 0.0f;
+        int   finished_count_ = 0;
+        int   total_subtasks_ = 0;
+
+        std::vector<std::unique_ptr<subtask_progress_bar>> subtasks_;
+
+        int last_line_count_ = 0;
+        int tag_col_width_   = -1;
+        mutable int suffix_width_ = -1;
+    };
+
+} // namespace mist::logger

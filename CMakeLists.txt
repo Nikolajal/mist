@@ -14,8 +14,9 @@ add_library(mist
     src/logger/logger_types.cpp
     src/logger/logger.cpp
     src/logger/progress_bar.cpp
+    src/logger/multi_progress_bar.cpp
     src/ring_finding/hough_transform.cpp
-    # rnd.h is header-only — no .cpp needed
+    # rnd.h and math/vec.h are header-only — no .cpp needed
 )
 
 target_include_directories(mist
