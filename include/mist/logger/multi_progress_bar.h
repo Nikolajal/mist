@@ -68,6 +68,21 @@ namespace mist::logger
          */
         void finish(bool flush = true);
 
+        /**
+         * @brief Reset this subtask's per-cycle state for a fresh iteration.
+         *
+         * Clears @c fraction_, @c current_, @c total_, and restarts the
+         * internal clock so the next @ref update shows "elapsed: 0s" rather
+         * than accumulating across iterations.  Use this when a subtask
+         * naturally cycles (e.g. once per spill in a streaming framer).
+         *
+         * Does NOT remove the subtask from the parent — the line stays in
+         * the anchored region and the next update redraws it.
+         *
+         * @param flush  If @c true, flush stdout after the redraw.
+         */
+        void restart(bool flush = true);
+
         /// @brief Returns @c true between the first @ref update and @ref finish.
         [[nodiscard]] bool is_active() const { return active_; }
 
@@ -97,6 +112,19 @@ namespace mist::logger
         int64_t current_ = 0;
         int64_t total_ = 0;
         bool active_ = true;
+
+        /// Per-subtask clock: started on the first @ref update or @ref restart
+        /// after activation.  Drives the elapsed-time display in the rendered
+        /// subtask line.  Plain @c time_point — protected by the parent's
+        /// @c mutex_ via the friend access pattern.
+        std::chrono::time_point<std::chrono::steady_clock> start_;
+        bool start_set_ = false;
+
+        /// When the subtask is finished, its elapsed display is frozen so
+        /// later redraws (triggered by other subtasks updating) don't show
+        /// the duration still ticking.  Holds the wall-time between
+        /// @c start_ and the @ref finish call, in seconds.
+        double frozen_elapsed_seconds_ = 0.0;
     };
 
     // =========================================================================
@@ -148,28 +176,72 @@ namespace mist::logger
          * @brief Drive the main bar with an integral (current / total) pair.
          *
          * Affects only the header line; subtasks must be updated individually.
-         * No-op if @p total is non-positive.
+         *
+         * Two modes are supported via @p total:
+         *  - @p total > 0:  classic progress mode — shows "X.X%  current/total
+         *                   unit  elapsed: …  eta: …".
+         *  - @p total <= 0: unknown-total mode — shows "current unit
+         *                   elapsed: …" without a percentage or ETA.  Useful
+         *                   for streaming workloads where the spill count is
+         *                   not known in advance.
          *
          * @tparam T      Integral type.
          * @param current Progress so far.
-         * @param total   Target count corresponding to 100 %.
+         * @param total   Target count, or any non-positive value to enter
+         *                unknown-total mode.
          * @param flush   If @c true, flush stdout after redraw.
          */
         template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
         void update(T current, T total, bool flush = true)
         {
-            if (total <= 0)
-                return;
-            const float frac = static_cast<float>(current) / static_cast<float>(total);
-            _set_main_fraction(std::clamp(frac, 0.0f, 1.0f), flush);
+            const bool unknown_total = !(total > 0);
+            const float frac = unknown_total
+                                   ? 0.0f
+                                   : std::clamp(static_cast<float>(current) /
+                                                    static_cast<float>(total),
+                                                0.0f, 1.0f);
+            _set_main_progress(frac,
+                               static_cast<int64_t>(current),
+                               unknown_total ? int64_t{-1} : static_cast<int64_t>(total),
+                               flush);
         }
 
         /**
          * @brief Drive the main bar with a raw fraction in [0, 1].
+         *
+         * Does NOT update the current/total counters — useful when the caller
+         * only knows the fraction (e.g. cascaded child bar).
+         *
          * @param fraction  Value in [0, 1]; clamped if out of range.
          * @param flush     If @c true, flush stdout after redraw.
          */
         void update(double fraction, bool flush = true);
+
+        /**
+         * @brief Customise the unit label shown next to the main-bar counter.
+         *
+         * Default is @c "tasks".  Beam-test framing typically uses @c "spills".
+         * Set to an empty string to suppress the counter entirely.
+         *
+         * @param unit  New label (copied).
+         * @param flush If @c true, flush stdout after redraw.
+         */
+        void set_unit(std::string unit, bool flush = true);
+
+        /**
+         * @brief Reset cycle-level state and restart the main-bar clock.
+         *
+         * Used by drivers that reuse the same multi-bar across logical
+         * cycles (e.g. one cycle per spill).  Resets @c main_fraction_,
+         * @c main_current_, the start time, and cascades into every
+         * subtask's @ref subtask_progress_bar::restart.
+         *
+         * Does NOT touch the subtask list itself — labels and ownership are
+         * preserved across the restart.
+         *
+         * @param flush If @c true, flush stdout after redraw.
+         */
+        void restart(bool flush = true);
 
         /**
          * @brief Finalise the whole multi-bar and release its anchor slot.
@@ -241,7 +313,18 @@ namespace mist::logger
                                       std::unique_lock<std::mutex> &lk, bool flush);
 
         /// @brief Update the main-bar fraction under lock and trigger a redraw.
+        ///
+        /// Internal helper used by the @c update(double) overload.  Leaves
+        /// @c main_current_ / @c main_total_ untouched.
         void _set_main_fraction(float frac, bool flush);
+
+        /// @brief Update the main-bar fraction and counters atomically.
+        ///
+        /// @param frac     Clamped progress fraction in [0, 1].
+        /// @param current  Current counter value (e.g. spill index).
+        /// @param total    Total count, or @c -1 to enter unknown-total mode.
+        /// @param flush    If @c true, flush stdout after redraw.
+        void _set_main_progress(float frac, int64_t current, int64_t total, bool flush);
 
         /// @brief Recompute cached layout state for the next draw.
         /// @pre @c mutex_ must be held by the caller.
@@ -281,6 +364,9 @@ namespace mist::logger
         std::string header_msg_;
 
         float main_fraction_ = 0.0f; ///< Last main-bar fraction (header line).
+        int64_t main_current_ = 0;   ///< Current main counter (e.g. processed spills).
+        int64_t main_total_ = -1;    ///< Total main counter; <0 means unknown.
+        std::string main_unit_ = "tasks"; ///< Label shown next to main counter.
         int finished_count_ = 0;     ///< Subtasks that have called @ref subtask_progress_bar::finish.
         int total_subtasks_ = 0;     ///< Number of subtasks ever registered.
 

@@ -281,6 +281,15 @@ namespace mist::logger
             return;
         who->active_   = false;
         who->fraction_ = 1.0f;
+        // Freeze the elapsed display so subsequent redraws (triggered by
+        // OTHER subtasks updating) don't show this finished subtask still
+        // ticking.  If the subtask was never updated start_set_ stays false
+        // and the elapsed column simply remains blank.
+        if (who->start_set_)
+        {
+            who->frozen_elapsed_seconds_ =
+                std::chrono::duration<double>(clock_t::now() - who->start_).count();
+        }
         ++finished_count_;
         _update_state_locked(main_fraction_);
         lk.unlock();  // see "Subtask callback notes" above
@@ -295,6 +304,62 @@ namespace mist::logger
         std::unique_lock<std::mutex> lk(mutex_);
         _update_state_locked(frac);
         lk.unlock();
+        anchor_object::erase_all();
+        anchor_object::redraw_all();
+        if (flush) std::cout << std::flush;
+    }
+
+    void multi_progress_bar::_set_main_progress(float frac, int64_t current,
+                                                int64_t total, bool flush)
+    {
+        {
+            std::unique_lock<std::mutex> lk(mutex_);
+            main_current_ = current;
+            main_total_   = total;
+            _update_state_locked(frac);
+        }
+        anchor_object::erase_all();
+        anchor_object::redraw_all();
+        if (flush) std::cout << std::flush;
+    }
+
+    void multi_progress_bar::set_unit(std::string unit, bool flush)
+    {
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            main_unit_ = std::move(unit);
+            suffix_width_ = -1; // force recompute on next render
+        }
+        anchor_object::erase_all();
+        anchor_object::redraw_all();
+        if (flush) std::cout << std::flush;
+    }
+
+    void multi_progress_bar::restart(bool flush)
+    {
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            // Reset cycle-level state. We keep `active_` true and the
+            // subtask list intact — only timing and fraction are recycled.
+            start_         = clock_t::now();
+            main_fraction_ = 0.0f;
+            // Do NOT touch main_current_ / main_total_ — the caller typically
+            // sets these explicitly after restart() via update().
+            suffix_width_  = -1; // force recompute (legend may have shifted)
+            finished_count_ = 0;
+
+            // Cascade restart into every subtask (under the parent lock so
+            // updates inside subtask state are atomic w.r.t. the redraw).
+            for (auto &s : subtasks_)
+            {
+                s->fraction_  = 0.0f;
+                s->current_   = 0;
+                s->total_     = 0;
+                s->active_    = true;
+                s->start_     = clock_t::now();
+                s->start_set_ = true;
+            }
+        }
         anchor_object::erase_all();
         anchor_object::redraw_all();
         if (flush) std::cout << std::flush;
@@ -319,32 +384,57 @@ namespace mist::logger
         const double elapsed =
             std::chrono::duration<double>(clock_t::now() - start_).count();
 
+        const bool unknown_total = (main_total_ <= 0);
+
         std::ostringstream suf;
-        suf << " " << std::fixed << std::setprecision(1)
-            << (main_fraction_ * 100.0f) << "%";
 
-        if (total_subtasks_ > 0)
-            suf << "  " << finished_count_ << "/" << total_subtasks_ << " tasks";
-
-        suf << "  elapsed: " << _format_duration(elapsed);
-
-        if (main_fraction_ > 0.001f && main_fraction_ < 1.0f)
+        if (unknown_total)
         {
-            const double eta = (elapsed / main_fraction_) * (1.0 - main_fraction_);
-            suf << "  eta: " << _format_duration(eta);
+            // No fraction available — show counter and elapsed only.
+            if (!main_unit_.empty())
+                suf << " " << si(main_current_) << " " << main_unit_;
+            suf << "  elapsed: " << _format_duration(elapsed);
         }
-        else if (main_fraction_ >= 1.0f)
-            suf << "  eta: done";
+        else
+        {
+            suf << " " << std::fixed << std::setprecision(1)
+                << (main_fraction_ * 100.0f) << "%";
+
+            if (!main_unit_.empty())
+                suf << "  " << si(main_current_) << "/" << si(main_total_)
+                    << " " << main_unit_;
+
+            suf << "  elapsed: " << _format_duration(elapsed);
+
+            if (main_fraction_ > 0.001f && main_fraction_ < 1.0f)
+            {
+                const double eta = (elapsed / main_fraction_) * (1.0 - main_fraction_);
+                suf << "  eta: " << _format_duration(eta);
+            }
+            else if (main_fraction_ >= 1.0f)
+                suf << "  eta: done";
+        }
 
         const std::string suf_str = suf.str();
 
         if (suffix_width_ < 0)
         {
+            // Worst-case width matches the longest possible suffix string
+            // for the current mode, so the padded line never reflows.
             std::ostringstream worst;
-            worst << " 100.0%";
-            if (total_subtasks_ > 0)
-                worst << "  " << total_subtasks_ << "/" << total_subtasks_ << " tasks";
-            worst << "  elapsed: 99h 59m 59s  eta: 99h 59m 59s";
+            if (unknown_total)
+            {
+                if (!main_unit_.empty())
+                    worst << " 1.00G " << main_unit_;
+                worst << "  elapsed: 99h 59m 59s";
+            }
+            else
+            {
+                worst << " 100.0%";
+                if (!main_unit_.empty())
+                    worst << "  1.00G/1.00G " << main_unit_;
+                worst << "  elapsed: 99h 59m 59s  eta: 99h 59m 59s";
+            }
             suffix_width_ = static_cast<int>(worst.str().size());
         }
 
@@ -402,14 +492,32 @@ namespace mist::logger
         if (static_cast<int>(s.tag_.size()) < tag_col_width_)
             tag_col += std::string(tag_col_width_ - s.tag_.size(), ' ');
 
+        // Per-subtask elapsed time — only set if the subtask has been
+        // updated at least once since (re)activation.  The display drops the
+        // "elapsed: " prefix to keep the subtask line compact: anyone reading
+        // the column knows what the trailing duration is.
+        //
+        // When the subtask is finished we use the frozen duration captured at
+        // finish() time so the figure does not keep ticking under us.
+        std::string elapsed_str;
+        if (s.start_set_)
+        {
+            const double elapsed = s.active_
+                ? std::chrono::duration<double>(clock_t::now() - s.start_).count()
+                : s.frozen_elapsed_seconds_;
+            elapsed_str = "  " + _format_duration(elapsed);
+        }
+
         std::ostringstream suf;
         suf << " " << std::fixed << std::setprecision(1)
             << (s.fraction_ * 100.0f) << "%";
         if (s.total_ > 0)
             suf << "  " << si(s.current_) << "/" << si(s.total_);
+        suf << elapsed_str;
 
         const std::string suf_str   = suf.str();
-        constexpr int     worst_w   = 21;
+        // Worst case includes per-subtask elapsed "  99h 59m 59s" (13 chars).
+        constexpr int     worst_w   = 21 + 14;
         const int         prefix_w  = static_cast<int>(tag_col.size());
         constexpr int     brackets  = 3;
         const int         bar_w     = std::max(6, tw - prefix_w - brackets - worst_w);
@@ -512,9 +620,35 @@ namespace mist::logger
             if (parent_.finished_count_ > 0)
                 --parent_.finished_count_;
         }
+        // Start the per-subtask clock on the first update after activation.
+        // Subsequent updates leave start_ alone so elapsed continues to grow
+        // until the next finish() or restart().
+        if (!start_set_)
+        {
+            start_     = std::chrono::steady_clock::now();
+            start_set_ = true;
+        }
         fraction_ = fraction;
         if (current) current_ = *current;
         if (total)   total_   = *total;
+        parent_._subtask_updated_locked(this, lk, flush);
+    }
+
+    void subtask_progress_bar::restart(bool flush)
+    {
+        std::unique_lock<std::mutex> lk(parent_.mutex_);
+        // Resurrection bookkeeping: if this subtask was previously finished,
+        // bring the parent's counter back to a consistent state.
+        if (!active_ && parent_.finished_count_ > 0)
+            --parent_.finished_count_;
+        active_    = true;
+        fraction_  = 0.0f;
+        current_   = 0;
+        total_     = 0;
+        start_     = std::chrono::steady_clock::now();
+        start_set_ = true;
+        // Re-render via the same path as a normal update so the parent
+        // and the anchor band see the reset immediately.
         parent_._subtask_updated_locked(this, lk, flush);
     }
 
