@@ -94,7 +94,7 @@ if(MIST_BUILD_TESTS)
     # Place all test binaries in <build>/bin/ for easy discovery.
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-    add_executable(test_logger test/logger.cxx)
+    add_executable(test_logger test/tester_logger.cxx)
 
     target_link_libraries(test_logger PRIVATE mist::mist)
 

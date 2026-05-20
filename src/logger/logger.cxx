@@ -1,18 +1,43 @@
+/**
+ * @file logger.cxx
+ * @brief Implementation of the @ref mist::logger free-function logging API and
+ *        the global anchored-object registry.
+ *
+ * The registry, the level filter, and the named-update map are all guarded by
+ * a single recursive mutex (returned by @ref anchor_object::registry_lock).
+ * Lock order across the codebase is registry → bar (i.e. @ref render_line
+ * overrides may acquire their own internal mutex while the registry mutex is
+ * held by the caller of @ref redraw_all).
+ */
+
 #include <mist/logger/logger.h>
 #include <algorithm>
+#include <atomic>
 #include <map>
-#include <set>
+#include <optional>
 
 namespace mist::logger
 {
     // =========================================================================
     // File-local RAII guard — erase anchors before printing, redraw after.
-    // Replaces the old detail::log_print_guard from the now-deleted progress_bar_registry.
+    // Acquires the global registry mutex on construction so the entire
+    // erase → print → redraw sequence is observed atomically by other threads.
     // =========================================================================
     struct log_print_guard
     {
-        log_print_guard() { anchor_object::erase_all(); }
-        ~log_print_guard() { anchor_object::redraw_all(); }
+        std::unique_lock<std::recursive_mutex> lk_;
+
+        log_print_guard()
+            : lk_(anchor_object::registry_lock())
+        {
+            anchor_object::erase_all();
+        }
+
+        ~log_print_guard()
+        {
+            anchor_object::redraw_all();
+            // Lock released as lk_ destructs.
+        }
 
         log_print_guard(const log_print_guard &) = delete;
         log_print_guard &operator=(const log_print_guard &) = delete;
@@ -27,19 +52,33 @@ namespace mist::logger
         return reg;
     }
 
+    std::recursive_mutex &anchor_object::_registry_mutex()
+    {
+        static std::recursive_mutex m;
+        return m;
+    }
+
+    std::unique_lock<std::recursive_mutex> anchor_object::registry_lock()
+    {
+        return std::unique_lock<std::recursive_mutex>(_registry_mutex());
+    }
+
     anchor_object::anchor_object()
     {
+        auto lk = registry_lock();
         _registry().push_back(this);
     }
 
     anchor_object::~anchor_object()
     {
+        auto lk = registry_lock();
         auto &reg = _registry();
         reg.erase(std::remove(reg.begin(), reg.end(), this), reg.end());
     }
 
     int anchor_object::total_anchored_lines()
     {
+        auto lk = registry_lock();
         int total = 0;
         for (const anchor_object *obj : _registry())
             total += obj->rendered_line_count();
@@ -48,6 +87,11 @@ namespace mist::logger
 
     void anchor_object::erase_all()
     {
+        auto lk = registry_lock();
+        // Cursor-control escapes only make sense on a TTY.  When redirected to
+        // a file or piped, suppress them entirely so log files stay clean.
+        if (!is_tty())
+            return;
         // Each anchor emitted a '\n' after its last line, so the cursor is
         // currently sitting one line BELOW the bottom anchor. We need to:
         //   1. move up (total_lines) times to reach the top anchor line
@@ -62,6 +106,12 @@ namespace mist::logger
 
     void anchor_object::redraw_all()
     {
+        auto lk = registry_lock();
+        // On a non-TTY destination the anchored band is not maintained — each
+        // log line already prints with its own '\n' and no in-place updates
+        // are possible. Skip the redraw entirely.
+        if (!is_tty())
+            return;
         // Cursor is at the start of the line where anchors should begin.
         // Ask each anchor to reprint itself (with a trailing '\n' so the
         // next anchor starts on a fresh line).
@@ -103,37 +153,58 @@ namespace mist::logger
         mutable bool rendered_ = false;
     };
 
-    static std::map<std::string, update_anchor> &_update_anchors()
-    {
-        static std::map<std::string, update_anchor> m;
-        return m;
-    }
+    // =========================================================================
+    // Named-update bookkeeping
+    //
+    // The single source of truth for whether a name is "live" or "ended" is
+    // the @c update_anchor_state struct below. Previously this used two
+    // separate containers and the invariant ("a name is ended iff it's in the
+    // ended set") was only implicit — see B10 in the mist audit.
+    //
+    // Both helpers are accessed only with the global registry mutex held by
+    // the caller, so no additional locking is needed here.
+    // =========================================================================
 
-    // Tracks names that have been end_update()'d, so a subsequent update()
-    // call on the same name can warn the user before recreating the anchor.
-    static std::set<std::string> &_ended_names()
+    struct update_anchor_state
     {
-        static std::set<std::string> s;
-        return s;
+        std::optional<update_anchor> live;  ///< Present iff the anchor is currently registered.
+        bool ended_recently = false;        ///< True between end_update() and the next update().
+    };
+
+    static std::map<std::string, update_anchor_state> &_update_anchors()
+    {
+        static std::map<std::string, update_anchor_state> m;
+        return m;
     }
 
     // =========================================================================
     // Globals
+    //
+    // g_min_level is read on every log() call and only written by the user via
+    // set_min_level — atomic relaxed access is sufficient.
     // =========================================================================
 
     namespace
     {
-        level_tag g_min_level = level_tag::DEBUG;
+        std::atomic<level_tag> g_min_level{level_tag::DEBUG};
     }
 
-    void set_min_level(level_tag level) { g_min_level = level; }
-    level_tag get_min_level() { return g_min_level; }
+    void set_min_level(level_tag level)
+    {
+        g_min_level.store(level, std::memory_order_relaxed);
+    }
+
+    level_tag get_min_level()
+    {
+        return g_min_level.load(std::memory_order_relaxed);
+    }
 
     bool check_level(level_tag tag)
     {
-        if (tag == level_tag::PLAIN || tag == level_tag::PROGRESS)
+        if (tag == level_tag::PLAIN)
             return true;
-        return static_cast<int>(tag) <= static_cast<int>(g_min_level);
+        return static_cast<int>(tag) <=
+               static_cast<int>(g_min_level.load(std::memory_order_relaxed));
     }
 
     // =========================================================================
@@ -189,20 +260,32 @@ namespace mist::logger
 
     void update(std::string update_name, std::string_view msg, bool flush)
     {
+        auto lk = anchor_object::registry_lock();
         auto &anchors = _update_anchors();
-        auto &ended = _ended_names();
+
+        // try_emplace creates a default-constructed update_anchor_state if the
+        // name is new; otherwise we just look at the existing entry.
+        auto [it, inserted] = anchors.try_emplace(update_name);
+        update_anchor_state &state = it->second;
 
         // Warn once if this name was previously end_update()'d, then recreate.
-        if (ended.count(update_name))
+        // The flag is the single source of truth — no separate "ended" set.
+        if (state.ended_recently)
         {
-            ended.erase(update_name);
+            state.ended_recently = false;
+            // Release the lock around the log call so the warning's own
+            // log_print_guard can re-acquire it (recursive mutex — safe either
+            // way, but we keep the order explicit and minimise nesting).
+            lk.unlock();
             log(level_tag::WARNING,
                 "update(\"" + update_name + "\") called after end_update() — recreating anchor.");
+            lk.lock();
         }
 
-        // Insert anchor on first call; get a reference to it either way.
-        auto [it, inserted] = anchors.try_emplace(update_name, update_name);
-        it->second.set_msg(std::string(msg));
+        // Construct the live anchor on first call; update its message otherwise.
+        if (!state.live.has_value())
+            state.live.emplace(update_name);
+        state.live->set_msg(std::string(msg));
 
         // Erase all anchor lines, redraw them all (this anchor now has the
         // updated message stored, so redraw_all() will print the new text).
@@ -215,18 +298,22 @@ namespace mist::logger
 
     void end_update(std::string update_name, bool flush)
     {
+        auto lk = anchor_object::registry_lock();
         auto &anchors = _update_anchors();
         auto it = anchors.find(update_name);
-        if (it == anchors.end())
+        if (it == anchors.end() || !it->second.live.has_value())
             return;
 
         // Capture the last message before erasing the anchor.
-        const std::string last_msg = it->second.last_msg();
+        const std::string last_msg = it->second.live->last_msg();
 
-        // Erase all anchor lines, remove this anchor.
+        // Erase all anchor lines, then destroy the live anchor (its destructor
+        // deregisters it from the global anchor list).  We KEEP the state entry
+        // in the map with ended_recently=true so a future update() with the
+        // same name can warn.
         anchor_object::erase_all();
-        anchors.erase(it); // ~update_anchor deregisters it
-        _ended_names().insert(update_name);
+        it->second.live.reset();
+        it->second.ended_recently = true;
 
         // Commit the final state of this update as a permanent scrolling line,
         // then redraw any remaining anchors below it.

@@ -1,3 +1,21 @@
+/**
+ * @file multi_progress_bar.cxx
+ * @brief Implementation of @ref mist::logger::multi_progress_bar and the
+ *        associated @ref mist::logger::subtask_progress_bar.
+ *
+ * Locking model:
+ *  - One @c std::mutex per multi-bar guards the main fraction, the subtask
+ *    vector, finished_count_, the cached widths, and every subtask's per-line
+ *    state.
+ *  - The global @ref anchor_object registry mutex is the outer lock; the
+ *    multi-bar's @c mutex_ is the inner lock.  Subtask update paths take the
+ *    multi-bar mutex first, mutate state, RELEASE, then call the registry-
+ *    locked anchor operations.  @ref render_line acquires the multi-bar
+ *    mutex briefly while the registry mutex is already held by the caller.
+ *  - On a non-TTY destination the anchored region is suppressed entirely
+ *    (no cursor escapes emitted).
+ */
+
 #include <mist/logger/multi_progress_bar.h>
 #include <mist/logger/logger.h>
 #include <array>
@@ -85,7 +103,11 @@ namespace mist::logger
     void multi_progress_bar::render_line() const
     {
         // Called by redraw_all() — cursor already positioned by erase_all().
-        // Pure draw, no cursor movement.
+        // The registry mutex is held by the caller; we add this bar's own
+        // mutex briefly to read state consistently (B4 fix: previously
+        // _draw_locked was reached with no mutex_ held, racing with subtask
+        // updates).
+        std::lock_guard<std::mutex> lk(mutex_);
         if (!active_ || last_line_count_ == 0)
             return;
         const_cast<multi_progress_bar *>(this)->_draw_locked();
@@ -174,6 +196,12 @@ namespace mist::logger
 
     void multi_progress_bar::_draw_locked()
     {
+        // On a non-TTY destination, suppress the entire multi-bar block so
+        // log files / piped output stay free of cursor-control escapes and
+        // ANSI sequences (B7 fix).
+        if (!is_tty())
+            return;
+
         // Ensure suffix_width_ and tag_col_width_ are initialised even if
         // _draw_locked is called from finish() before any update().
         if (tag_col_width_ < 0)
@@ -213,11 +241,33 @@ namespace mist::logger
     // Private — subtask callbacks (called with mutex_ held by subtask methods)
     // =========================================================================
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Subtask callback notes (B5):
+    //
+    // The anchor operations (erase_all / redraw_all) acquire the global
+    // registry mutex.  Lock order across the codebase is registry → bar; the
+    // subtask paths enter with the bar mutex held, so we must RELEASE the bar
+    // mutex before acquiring the registry mutex, otherwise the ordering would
+    // be bar → registry and could deadlock with a concurrent log() that goes
+    // registry → bar (via redraw_all → render_line).
+    //
+    // Releasing the bar mutex means another thread could mutate state during
+    // the anchor calls.  In practice the multi-bar is driven from a single
+    // thread (the writer's main loop), and worker threads only call log() —
+    // which acquires the registry mutex (synchronising it with our anchor
+    // calls) but never the bar mutex.  Therefore no state changes are
+    // possible during the unlocked window in the supported use pattern.
+    //
+    // If you support concurrent updates from multiple threads in the future,
+    // wrap state mutations in a small "needs another pass" flag that is
+    // re-checked after re-acquiring the lock.
+    // ─────────────────────────────────────────────────────────────────────────
+
     void multi_progress_bar::_subtask_updated_locked(
         const subtask_progress_bar * /*who*/, std::unique_lock<std::mutex> &lk, bool flush)
     {
         _update_state_locked(main_fraction_);
-        lk.unlock();  // release before anchor calls to avoid re-entrant deadlock
+        lk.unlock();  // see "Subtask callback notes" above
         anchor_object::erase_all();
         anchor_object::redraw_all();
         if (flush) std::cout << std::flush;
@@ -233,7 +283,7 @@ namespace mist::logger
         who->fraction_ = 1.0f;
         ++finished_count_;
         _update_state_locked(main_fraction_);
-        lk.unlock();
+        lk.unlock();  // see "Subtask callback notes" above
         anchor_object::erase_all();
         anchor_object::redraw_all();
         if (flush) std::cout << std::flush;

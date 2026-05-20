@@ -44,20 +44,32 @@ struct capture_streams
 {
     std::ostringstream cout_buf, cerr_buf;
     std::streambuf *old_cout, *old_cerr;
+    bool prev_colour;
+    bool prev_tty;
 
     capture_streams()
         : old_cout(std::cout.rdbuf(cout_buf.rdbuf())),
-          old_cerr(std::cerr.rdbuf(cerr_buf.rdbuf()))
+          old_cerr(std::cerr.rdbuf(cerr_buf.rdbuf())),
+          prev_colour(mist::logger::is_colour_enabled()),
+          prev_tty(mist::logger::is_tty())
     {
-        // Force colour off so we capture plain text without ANSI escapes
+        // Force colour off so we capture plain text without ANSI escapes.
         mist::logger::set_colour_enabled(false);
+        // Force TTY on so progress bars and named anchors still emit content
+        // through the captured cout buffer (after B7 the anchored-band
+        // machinery is gated on is_tty()).
+        mist::logger::set_tty(true);
     }
 
     ~capture_streams()
     {
         std::cout.rdbuf(old_cout);
         std::cerr.rdbuf(old_cerr);
-        mist::logger::set_colour_enabled(true);
+        // Restore both observed states (B15) — never unconditionally force
+        // colour or TTY back on, which would be wrong when running
+        // non-interactively.
+        mist::logger::set_colour_enabled(prev_colour);
+        mist::logger::set_tty(prev_tty);
     }
 };
 
@@ -115,6 +127,10 @@ void test_debug_filtered_below_min_level()
 
 void test_colour_tag_roundtrip()
 {
+    // Snapshot the prior state so the test doesn't pollute the global
+    // colour flag for whatever runs after it (B15).
+    const bool prev_colour = mist::logger::is_colour_enabled();
+
     mist::logger::set_colour_enabled(true);
     const std::string seq = mist::logger::ansi(mist::logger::colour_tag::RED,
                                                {mist::logger::style_tag::BOLD});
@@ -125,7 +141,7 @@ void test_colour_tag_roundtrip()
     const std::string empty = mist::logger::ansi(mist::logger::colour_tag::RED);
     CHECK(empty.empty());
 
-    mist::logger::set_colour_enabled(true);
+    mist::logger::set_colour_enabled(prev_colour);
 }
 
 void test_convenience_wrappers_compile_and_run()
@@ -155,6 +171,24 @@ void test_progress_bar_basic()
     }
 
     CHECK(true); // reaching here means no crash / exception
+}
+
+void test_progress_bar_finish_emits_final_frame()
+{
+    // B1 regression test: calling finish() must commit a 100% line even if
+    // the bar was last updated at a non-100% fraction. Previously finish()
+    // erased the bar without redrawing the final state.
+    capture_streams cap;
+
+    {
+        mist::logger::progress_bar bar;
+        bar.update(7, 10, /*flush=*/false);   // bar visually at 70%
+        bar.finish(/*flush=*/false);          // must commit 100% frame
+    }
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("100.0%") != std::string::npos);
+    CHECK(out.find("eta: done") != std::string::npos);
 }
 
 void test_update_anchor_basic()
@@ -338,7 +372,7 @@ void demo_visual()
     // Loop 1: two named update anchors
     for (int i = 0; i <= 10; ++i)
     {
-        mist::logger::debug("debug message — anchor pinned below");
+        mist::logger::debug(std::to_string(i) + "debug message — anchor pinned below");
         mist::logger::update("test", "testing: " + std::to_string(i));
         if (i > 5)
             mist::logger::update("second test", "testing: " + std::to_string(i));
@@ -353,7 +387,7 @@ void demo_visual()
     mist::logger::progress_bar bar;
     for (int i = 0; i <= 10; ++i)
     {
-        mist::logger::debug("debug message — bar and anchor pinned below");
+        mist::logger::debug(std::to_string(i) + "debug message — bar and anchor pinned below");
         mist::logger::update("test", "testing: " + std::to_string(i));
         bar.update(i, 10, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -370,7 +404,7 @@ void demo_visual()
 
         for (int i = 0; i <= 10; ++i)
         {
-            mist::logger::debug("debug message — multi-bar pinned below");
+            mist::logger::debug(std::to_string(i) + "debug message — multi-bar pinned below");
             a.update(i, 10, false);
             b.update(i, 20, false);
             multi.update(i, 15, false);
@@ -398,6 +432,7 @@ int main()
     test_colour_tag_roundtrip();
     test_convenience_wrappers_compile_and_run();
     test_progress_bar_basic();
+    test_progress_bar_finish_emits_final_frame();
     test_update_anchor_basic();
     test_update_anchor_end_noop();
     test_update_anchor_resurrection_warning();

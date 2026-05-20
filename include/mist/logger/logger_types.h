@@ -15,6 +15,8 @@ namespace mist::logger
     // Enumerations
     // ------------------------------------------------------------------
 
+    /// @brief ANSI 8/16-colour foreground enumeration.
+    /// Values match the raw SGR codes so they can be emitted directly.
     enum class colour_tag : int
     {
         // Foreground
@@ -38,6 +40,7 @@ namespace mist::logger
         RESET = 0
     };
 
+    /// @brief ANSI 8/16-colour background enumeration (same numbering as @ref colour_tag + 10).
     enum class bg_colour_tag : int
     {
         // Background
@@ -60,6 +63,8 @@ namespace mist::logger
         BRIGHT_WHITE = 107
     };
 
+    /// @brief ANSI SGR style attributes — combine in a brace-enclosed list passed to @ref ansi.
+    /// @note Many of the rarer codes (FRAKTUR, ENCIRCLED, …) are not honoured by typical terminals.
     enum class style_tag : int
     {
         NONE = 0,
@@ -105,26 +110,47 @@ namespace mist::logger
         RESET_UNDERLINE_COLOUR = 59
     };
 
+    /// @brief Severity levels for @ref log.
+    /// @c PLAIN is exempt from the level filter; ordering goes most → least severe.
     enum class level_tag : int
     {
-        ERROR = 0,
-        WARNING = 1,
-        INFO = 2,
-        DEBUG = 3,
-        PROGRESS = 4, ///< for in-place progress bars and counters
-        PLAIN = 5
+        ERROR   = 0, ///< Fatal or near-fatal condition; written to stderr.
+        WARNING = 1, ///< Recoverable anomaly; written to stderr.
+        INFO    = 2, ///< Routine progress information; stdout.
+        DEBUG   = 3, ///< Verbose diagnostic; stdout.
+        PLAIN   = 4  ///< Unstyled output; bypasses the level filter.
     };
 
     // ------------------------------------------------------------------
     // Colour enabled state — shared across logger and progress_bar
     // ------------------------------------------------------------------
 
-    /// Override automatic TTY detection to force colour on or off.
+    /// @brief Override automatic TTY detection to force colour on or off.
+    /// Thread-safe; visible immediately to subsequent @ref is_colour_enabled calls.
     void set_colour_enabled(bool enabled);
 
-    /// Returns true if ANSI colour output is enabled.
-    /// Auto-detects via isatty() on first call unless overridden.
+    /// @brief Returns true if ANSI colour output is enabled.
+    /// Auto-detects via @c isatty() on first call unless overridden by
+    /// @ref set_colour_enabled. Thread-safe.
     bool is_colour_enabled();
+
+    /// @brief Returns true if both stdout and stderr are attached to a TTY.
+    ///
+    /// Independent of colour preference — used by @ref anchor_object to decide
+    /// whether emitting cursor-control escapes is safe. When output is being
+    /// piped or redirected to a file this returns @c false and the anchored-band
+    /// machinery degrades to no-ops, keeping log files free of control bytes.
+    /// Thread-safe; the underlying @c isatty probe is cached after the first call.
+    bool is_tty();
+
+    /// @brief Override the cached TTY state.
+    ///
+    /// Primarily useful for tests that capture @c std::cout / @c std::cerr via
+    /// custom stream buffers — capturing makes @c isatty return @c false, which
+    /// would otherwise suppress all bar / anchor rendering during the test.
+    /// Pass @c true inside the test fixture, then restore the previous value
+    /// on tear-down. Thread-safe.
+    void set_tty(bool enabled);
 
     // ------------------------------------------------------------------
     // Core ANSI formatting

@@ -63,12 +63,18 @@ namespace mist
 
         /**
          * @brief Sample from Poisson(λ).
+         *
          * @param lambda Mean of the distribution. Must be > 0.
-         * @throws std::invalid_argument if lambda <= 0.
+         *               Accepts non-integer means — physics rates (DCR,
+         *               occupancy, etc.) commonly use fractional values.
+         * @return Integer sample drawn from Poisson(λ).
+         * @throws std::invalid_argument if @p lambda <= 0.
+         * @note  Integer literals convert implicitly (e.g. @c rng.poisson(5)
+         *        still works), so existing call sites need no changes.
          */
-        [[nodiscard]] int poisson(int lambda)
+        [[nodiscard]] int poisson(double lambda)
         {
-            if (lambda <= 0)
+            if (!(lambda > 0.0))
                 throw std::invalid_argument("Poisson lambda must be > 0");
             std::poisson_distribution<int> dist(lambda);
             return dist(gen_);
@@ -123,7 +129,7 @@ namespace mist
         }
 
     private:
-        engine_t gen_;
+        engine_t gen_; ///< Underlying Mersenne-Twister engine; reseeded via @ref reseed.
     };
 
 } // namespace mist

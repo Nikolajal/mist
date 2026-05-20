@@ -46,5 +46,9 @@
 # build directory
 build/
 
-# Claude
-.claude
+# install-target binary directory (kept empty in the source tree)
+bin/
+
+# Claude tooling (sessions, worktrees, etc.)
+.claude/
+.claude/worktrees/

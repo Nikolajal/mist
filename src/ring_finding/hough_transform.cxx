@@ -1,4 +1,10 @@
+/**
+ * @file hough_transform.cxx
+ * @brief Implementation of @ref mist::ring_finding::hough_transform.
+ */
+
 #include <mist/ring_finding/hough_transform.h>
+#include <cassert>
 #include <numeric>
 
 namespace mist::ring_finding
@@ -48,9 +54,16 @@ namespace mist::ring_finding
             r_bins_.push_back(r);
 
         // Build LUT: for each key, for each R bin, which accumulator cells does it vote for?
-        // Arc rasterisation samples the circle at 360 equally-spaced angles.
-        // Duplicate cells within each R bin are removed via sort+unique.
-        constexpr int n_angles = 360;
+        // Arc rasterisation samples the circle at angles spaced so that each
+        // accumulator cell on the arc is hit at least twice — this avoids
+        // undersampling at large radii where 360 fixed angles would leave gaps
+        // (B11 fix).
+        //   arc length over one angular step ≈ R · Δθ
+        //   target step size                ≈ cell_size / 2
+        //   ⇒ n_angles ≈ 2π · R / (cell_size / 2) = 4π R / cell_size
+        // We never go below 360 angles, which preserves the previous behaviour
+        // for typical small/medium rings.
+        constexpr int kMinAngles = 360;
         constexpr float two_pi = 2.f * 3.14159265358979323846f;
 
         lut_.clear();
@@ -62,6 +75,10 @@ namespace mist::ring_finding
             for (int iR = 0; iR < static_cast<int>(r_bins_.size()); ++iR)
             {
                 const float R = r_bins_[iR];
+                const int n_angles = std::max(
+                    kMinAngles,
+                    static_cast<int>(std::ceil(2.f * two_pi * R / cell_size)));
+
                 for (int ia = 0; ia < n_angles; ++ia)
                 {
                     const float angle = two_pi * ia / n_angles;
@@ -117,6 +134,12 @@ namespace mist::ring_finding
             for (int iR = 0; iR < n_r; ++iR)
                 for (int cell : entry[iR])
                 {
+                    // Defensive bounds check (B13): LUT construction already
+                    // clamps ix/iy into [0, nx_) × [0, ny_), so this assert
+                    // should never fire — but if anyone refactors build_lut
+                    // and drops the clamp, we want a loud failure in debug
+                    // builds rather than silent out-of-bounds writes.
+                    assert(cell >= 0 && cell < n_cells);
                     const int val = ++accum_[iR * n_cells + cell];
                     if (val > best_count)
                     {
@@ -225,6 +248,13 @@ namespace mist::ring_finding
             if (static_cast<int>(active_indices.size()) < threshold)
                 break;
         }
+
+        // Sort by descending peak votes so callers can rely on rings[0] being
+        // the strongest candidate (B12 fix — the extraction order is *usually*
+        // but not strictly monotonic).
+        std::sort(found_rings.begin(), found_rings.end(),
+                  [](const ring_result &a, const ring_result &b)
+                  { return a.peak_votes > b.peak_votes; });
 
         return found_rings;
     }

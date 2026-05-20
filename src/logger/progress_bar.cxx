@@ -1,3 +1,15 @@
+/**
+ * @file progress_bar.cxx
+ * @brief Implementation of @ref mist::logger::progress_bar.
+ *
+ * State accessed concurrently from update / finish / render_line is protected
+ * by the per-instance @c mutex_.  Bars cooperate with the global anchor
+ * registry: state-mutating paths acquire the bar mutex briefly, release it,
+ * and then call @ref mist::logger::anchor_object::erase_all and @ref redraw_all
+ * (which acquire the registry mutex).  This keeps the lock order
+ * @c registry → @c bar consistent across all code paths.
+ */
+
 #include <mist/logger/progress_bar.h>
 #include <iostream>
 #include <sstream>
@@ -65,7 +77,11 @@ namespace mist::logger
     progress_bar::~progress_bar()
     {
         // Safety net: if finish() was never called, commit whatever state we
-        // have so the bar line isn't left dangling on screen.
+        // have so the bar line isn't left dangling on screen.  We must hold
+        // the mutex while reading active_ and the cached suffix — another
+        // thread may still be inside update() during destruction (programmer
+        // error, but cheap to defend against).
+        std::lock_guard<std::mutex> lk(mutex_);
         if (active_)
         {
             active_ = false;
@@ -81,13 +97,17 @@ namespace mist::logger
 
     int progress_bar::rendered_line_count() const
     {
+        std::lock_guard<std::mutex> lk(mutex_);
         return (suffix_width_ >= 0 && active_) ? 1 : 0;
     }
 
     void progress_bar::render_line() const
     {
         // Called by redraw_all() after erase_all() has already positioned the
-        // cursor. Just draw in-place — no cursor movement here.
+        // cursor.  redraw_all() holds the registry mutex; we add the bar's
+        // own mutex briefly to read state consistently (lock order
+        // registry → bar, in line with the documented model).
+        std::lock_guard<std::mutex> lk(mutex_);
         if (suffix_width_ < 0 || !active_)
             return;
         _draw();
@@ -119,20 +139,42 @@ namespace mist::logger
 
     void progress_bar::finish(bool flush)
     {
-        _update_state(1.0f, 1, 1);
+        // 1. Update state to 100% under the mutex (B2 fix: previously called
+        //    _update_state unlocked, violating its own "mutex_ must be held"
+        //    contract).
         {
             std::lock_guard<std::mutex> lk(mutex_);
             if (!active_)
                 return;
+            _update_state(1.0f, 1, 1);
+        }
+
+        // 2. Erase the anchored band — this bar is still active and counts
+        //    among the lines to erase. We hold no bar mutex here, only the
+        //    registry mutex inside erase_all.
+        anchor_object::erase_all();
+
+        // 3. Emit the final 100% frame as a permanent scrolling line (B1 fix:
+        //    previously the bar was deactivated before any draw, so render_line
+        //    and _draw both early-returned and nothing was committed). Locking
+        //    around _draw keeps it consistent with the contract that the cached
+        //    suffix is only read with the mutex held.
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            _draw();
+        }
+
+        // 4. Now deactivate, so subsequent erase_all/redraw_all calls ignore
+        //    this bar, and the line just drawn scrolls naturally.
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
             active_ = false;
             suffix_width_ = -1;
         }
-        // rendered_line_count() now returns 0, so erase_all() skips this bar.
-        // redraw_all() redraws any remaining anchors. Then _draw() commits the
-        // final bar state as a permanent scrolling line.
-        anchor_object::erase_all();
+
+        // 5. Redraw the remaining anchors below the committed line.
         anchor_object::redraw_all();
-        _draw();
+
         if (flush)
             std::cout << std::flush;
     }
@@ -215,6 +257,10 @@ namespace mist::logger
     {
         // Pure draw at the current cursor position — no cursor movement.
         if (suffix_width_ < 0)
+            return;
+        // On a non-TTY destination the anchored band is not maintained at all
+        // — emit nothing so log files stay free of cursor-control escapes.
+        if (!is_tty())
             return;
 
         std::string padded = last_suffix_;

@@ -186,8 +186,14 @@ namespace mist::ring_finding
          * @param max_rings           Maximum number of rings to extract (default 2).
          * @param collection_radius   Distance from the ring arc within which a hit
          *                            is assigned to the ring [mm] (default 6).
-         * @return                    Vector of @ref ring_result in descending
-         *                            peak-vote order.
+         * @return                    Vector of @ref ring_result.  The result is
+         *                            sorted in descending @c peak_votes order
+         *                            after extraction, so callers may rely on
+         *                            @c rings[0] being the strongest candidate
+         *                            even though the extraction order itself is
+         *                            "first ring found, then next-best after
+         *                            removing its hits" (which is *typically*
+         *                            but not strictly monotonic).
          */
         std::vector<ring_result> find_rings(const std::vector<hit> &hits,
                                             float threshold_fraction,
@@ -219,20 +225,20 @@ namespace mist::ring_finding
         //  Accumulator geometry
         // ================================================================
 
-        float cell_size_ = 3.2f;
-        float x_min_ = 0.f;
-        float x_max_ = 0.f;
-        float y_min_ = 0.f;
-        float y_max_ = 0.f;
-        int nx_ = 0;
-        int ny_ = 0;
+        float cell_size_ = 3.2f; ///< Side length of one accumulator cell [mm].
+        float x_min_ = 0.f;      ///< Lower-left x of the accumulator [mm].
+        float x_max_ = 0.f;      ///< Upper-right x of the accumulator [mm].
+        float y_min_ = 0.f;      ///< Lower-left y of the accumulator [mm].
+        float y_max_ = 0.f;      ///< Upper-right y of the accumulator [mm].
+        int nx_ = 0;             ///< Number of cells along x.
+        int ny_ = 0;             ///< Number of cells along y.
 
         // ================================================================
         //  LUT and accumulator storage
         // ================================================================
 
-        std::vector<float> r_bins_;
-        std::vector<int> accum_;
+        std::vector<float> r_bins_; ///< Candidate radii sampled during voting [mm].
+        std::vector<int> accum_;    ///< Flat accumulator `accum_[iR*nx*ny + iy*nx + ix]`.
 
         /// `lut_[lut_key][r_bin_index]` → vector of flat cell indices
         /// that this key votes for at that radius bin.
