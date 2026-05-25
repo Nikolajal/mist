@@ -138,6 +138,33 @@ namespace mist
             return uniform(-pi, pi);
         }
 
+        // ------------------------------------------------------------------
+        // Engine access (escape hatch for hot loops)
+        // ------------------------------------------------------------------
+
+        /**
+         * @brief Direct access to the underlying Mersenne-Twister engine.
+         *
+         * Most callers should use @ref uniform, @ref normal, @ref poisson
+         * instead — those construct their distribution per call, which is
+         * negligible for occasional sampling.
+         *
+         * In a tight hot loop, however, the per-call construction adds up.
+         * Cache a distribution next to your `Rnd` instance and feed the
+         * engine directly:
+         *
+         * @code{.cpp}
+         * thread_local mist::Rnd rng;
+         * static thread_local std::uniform_real_distribution<float> dist(-1.f, 1.f);
+         * float x = dist(rng.engine());     // no per-call construction
+         * @endcode
+         *
+         * @warning Reads and writes to the engine are NOT thread-safe.
+         *          Treat this exactly like any other member: one engine per
+         *          thread (via @c thread_local Rnd).
+         */
+        [[nodiscard]] Engine &engine() noexcept { return gen_; }
+
     private:
         Engine gen_; ///< Underlying Mersenne-Twister engine; reseeded via @ref reseed.
     };

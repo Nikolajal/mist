@@ -17,7 +17,7 @@ It currently provides three subsystems:
 | Logger         | `mist::logger::`         | Coloured terminal logger, single-bar & multi-bar progress, anchored output |
 | Ring finding   | `mist::ring_finding::`   | LUT-accelerated circular Hough-transform ring-finder                       |
 
-A neural-network ring-finder (`mist::ring_finding::nn_transform`) is planned as a companion to the Hough transform — see [DISCUSSION.md](DISCUSSION.md) item F-01.
+A neural-network ring-finder (`mist::ring_finding::nn_transform`) is planned as a companion to the Hough transform.
 
 ---
 
@@ -354,9 +354,9 @@ for (auto &ring : rings)
 - `mist::ring_finding::nn_transform` — neural network ring-finder (ONNX
   Runtime inference, trained in PyTorch) as a drop-in companion to the Hough
   transform, operating on the same `mist::ring_finding::Hit` input type.
-- See [DISCUSSION.md](DISCUSSION.md) for open design questions (API
-  redesign for `find_rings`, `Rnd::uniform` swap-vs-throw, CI sanitizers,
-  test coverage backlog).
+
+Open design questions and feature plans live as GitHub issues with the
+`design` and `enhancement` labels.
 
 ---
 
@@ -366,7 +366,6 @@ for (auto &ring : rings)
 mist/
 ├── CMakeLists.txt
 ├── CHANGELOG.md
-├── DISCUSSION.md
 ├── cmake/
 │   └── mistConfig.cmake.in
 ├── include/mist/

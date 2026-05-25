@@ -52,3 +52,7 @@ bin/
 # Claude tooling (sessions, worktrees, etc.)
 .claude/
 .claude/worktrees/
+
+# Local design-discussion scratchpad — kept out of git so open questions
+# move to GitHub Issues once they're worth collaborating on.
+DISCUSSION.md
