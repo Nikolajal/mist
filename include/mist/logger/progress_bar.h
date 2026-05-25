@@ -12,29 +12,37 @@
 #define MIST_HAS_IOCTL 1
 #endif
 
+/**
+ * @file ProgressBar.h
+ * @brief @ref mist::logger::ProgressBar — single-line in-place progress bar
+ *        that participates in the anchored-band registry so log lines never
+ *        scroll across it.  See @ref mist::logger::MultiProgressBar for the
+ *        composite multi-line variant.
+ */
+
 namespace mist::logger
 {
-    enum class bar_style
+    enum class BarStyle
     {
-        ARROW, ///< [=====>    ]  classic ASCII
-        BLOCK  ///< [██████░░░░]  Unicode block characters
+        Arrow, ///< [=====>    ]  classic ASCII
+        Block  ///< [██████░░░░]  Unicode block characters
     };
 
     /**
      * @brief In-place terminal progress bar with elapsed time and ETA.
      *
-     * Inherits anchor_object — registers itself on first render and
+     * Inherits AnchorObject — registers itself on first render and
      * deregisters on finish(), so log() calls automatically erase and
      * redraw the bar region without any extra wiring.
      */
-    class progress_bar : public anchor_object
+    class ProgressBar : public AnchorObject
     {
     public:
         /**
          * @brief Construct an untagged progress bar.
          * @param style  Visual fill style (BLOCK Unicode or ARROW ASCII).
          */
-        explicit progress_bar(bar_style style = bar_style::BLOCK);
+        explicit ProgressBar(BarStyle style = BarStyle::Block);
 
         /**
          * @brief Construct a named progress bar.
@@ -48,17 +56,23 @@ namespace mist::logger
          * @param tag    Short label shown in brackets before the bar.
          * @param style  Visual fill style (BLOCK or ARROW).
          */
-        explicit progress_bar(std::string tag, bar_style style = bar_style::BLOCK);
+        explicit ProgressBar(std::string tag, BarStyle style = BarStyle::Block);
 
         /**
          * @brief Destructor — safety net that commits the last state if
          *        @ref finish was never called, preventing dangling bar lines.
          */
-        ~progress_bar() override;
+        ~ProgressBar() override;
 
         /**
-         * @brief Set or replace the tag at any time (before the first update).
-         * @param tag  New label; pass an empty string to remove the tag.
+         * @brief Set or replace the tag at any time.
+         *
+         * Safe to call before the first @ref update, between updates, or after
+         * @ref finish — the cached layout width is invalidated so the next
+         * render recomputes column placement from the new tag length.
+         *
+         * @param tag  New label; pass an empty string to revert to the default
+         *             @c [PROGRESS] prefix (equivalent to @ref clear_tag).
          */
         void assign_tag(std::string tag);
 
@@ -88,8 +102,8 @@ namespace mist::logger
                               static_cast<int64_t>(current),
                               static_cast<int64_t>(total));
             }
-            anchor_object::erase_all();
-            anchor_object::redraw_all();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
             if (flush)
                 std::cout << std::flush;
         }
@@ -119,7 +133,7 @@ namespace mist::logger
         /// @brief Returns @c true between the first @ref update and @ref finish.
         [[nodiscard]] bool is_active() const;
 
-        // anchor_object interface
+        // AnchorObject interface
         [[nodiscard]] int rendered_line_count() const override;
         void render_line() const override;
 
@@ -130,7 +144,7 @@ namespace mist::logger
         mutable std::mutex mutex_; ///< Guards all per-instance state below.
 
         std::string tag_;           ///< Optional label shown as [tag] before the bar.
-        bar_style style_;           ///< Visual fill style (BLOCK or ARROW).
+        BarStyle style_;           ///< Visual fill style (BLOCK or ARROW).
         bool active_ = false;       ///< True between first @ref update and @ref finish.
         int suffix_width_ = -1;     ///< Cached width of the right-side info column; -1 = uninitialised.
         float last_fraction_ = 0.0f;///< Last fraction passed to @ref _update_state.

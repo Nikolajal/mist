@@ -12,4 +12,8 @@
 
 include("${CMAKE_CURRENT_LIST_DIR}/mistTargets.cmake")
 
+# Confirm to callers that the package was found (some Find-module
+# consumers check <Pkg>_FOUND before using the imported targets).
+set(mist_FOUND TRUE)
+
 check_required_components(mist)

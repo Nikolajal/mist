@@ -3,13 +3,23 @@
 #include <type_traits>
 #include <stdexcept>
 
+/**
+ * @file Rnd.h
+ * @brief @ref mist::Rnd — thin RAII wrapper around @c std::mt19937 with
+ *        convenient sampling helpers (uniform, normal, Poisson, generate_phi).
+ *
+ * Header-only; included transitively from @c mist/mist.h.  Construct one
+ * instance per thread that needs randomness — the engine state is not
+ * thread-safe.  See @ref mist::Rnd for full API documentation.
+ */
+
 namespace mist
 {
     // Reusable SFINAE alias: resolves to void if T is a floating-point type,
     // otherwise removes the template from the overload set entirely.
     // (C++20 equivalent: template <std::floating_point T>)
     template <typename T>
-    using floating_type_check = std::enable_if_t<std::is_floating_point_v<T>>;
+    using FloatingTypeCheck = std::enable_if_t<std::is_floating_point_v<T>>;
 
     /**
      * @brief Random number generator wrapper with convenient distributions.
@@ -25,30 +35,30 @@ namespace mist
      *  - Is safe for concurrent use across separate instances
      *  - Has negligible overhead (distribution objects are cheap to construct)
      *
-     * @note Not thread-safe. Give each thread its own rnd instance.
+     * @note Not thread-safe. Give each thread its own Rnd instance.
      *
      * Example:
      * @code{.cpp}
-     * mist::rnd rng;                    // non-deterministic seed
+     * mist::Rnd rng;                    // non-deterministic seed
      * double x = rng.uniform();         // uniform [0, 1)
      * float  y = rng.uniform(0.f, 5.f);
      * int    z = rng.poisson(5);        // Poisson(λ=5)
      * @endcode
      */
-    class [[nodiscard]] rnd
+    class [[nodiscard]] Rnd
     {
     public:
-        using engine_t = std::mt19937;
+        using Engine = std::mt19937;
 
         // ------------------------------------------------------------------
         // Constructors
         // ------------------------------------------------------------------
 
         /// Non-deterministic seed via std::random_device.
-        rnd() : gen_(std::random_device{}()) {}
+        Rnd() : gen_(std::random_device{}()) {}
 
         /// Deterministic seed for reproducible sequences.
-        explicit rnd(uint32_t seed) : gen_(seed) {}
+        explicit Rnd(uint32_t seed) : gen_(seed) {}
 
         /**
          * @brief Reseed the engine.
@@ -91,7 +101,7 @@ namespace mist
          * @param end   Exclusive upper bound (default 1).
          * @note Arguments are swapped automatically if end < start.
          */
-        template <typename T, typename = floating_type_check<T>>
+        template <typename T, typename = FloatingTypeCheck<T>>
         [[nodiscard]] T uniform(T start = T(0), T end = T(1))
         {
             if (end < start)
@@ -106,7 +116,7 @@ namespace mist
          * @param mean Mean of the distribution (default 0).
          * @param stdv Standard deviation (default 1).
          */
-        template <typename T, typename = floating_type_check<T>>
+        template <typename T, typename = FloatingTypeCheck<T>>
         [[nodiscard]] T normal(T mean = T(0), T stdv = T(1))
         {
             std::normal_distribution<T> dist(mean, stdv);
@@ -129,7 +139,7 @@ namespace mist
         }
 
     private:
-        engine_t gen_; ///< Underlying Mersenne-Twister engine; reseeded via @ref reseed.
+        Engine gen_; ///< Underlying Mersenne-Twister engine; reseeded via @ref reseed.
     };
 
 } // namespace mist

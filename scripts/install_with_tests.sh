@@ -15,6 +15,9 @@ BUILD_DIR="$PROJECT_ROOT/build"
 BUILD_TESTS=OFF
 RUN_TESTS=0
 
+# Override install prefix with MIST_INSTALL_PREFIX env var; fall back to ~/.local
+INSTALL_PREFIX="${MIST_INSTALL_PREFIX:-$HOME/.local}"
+
 for arg in "$@"; do
     case "$arg" in
         --tests|-t) BUILD_TESTS=ON ;;
@@ -32,7 +35,7 @@ done
 
 cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR"    \
     -DCMAKE_BUILD_TYPE=Release              \
-    -DCMAKE_INSTALL_PREFIX="$HOME/.local"   \
+    -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
     -DMIST_BUILD_TESTS="$BUILD_TESTS"
 cmake --build "$BUILD_DIR" --parallel
 cmake --install "$BUILD_DIR"

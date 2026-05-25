@@ -1,11 +1,11 @@
 /**
- * @file progress_bar.cxx
- * @brief Implementation of @ref mist::logger::progress_bar.
+ * @file ProgressBar.cxx
+ * @brief Implementation of @ref mist::logger::ProgressBar.
  *
  * State accessed concurrently from update / finish / render_line is protected
  * by the per-instance @c mutex_.  Bars cooperate with the global anchor
  * registry: state-mutating paths acquire the bar mutex briefly, release it,
- * and then call @ref mist::logger::anchor_object::erase_all and @ref redraw_all
+ * and then call @ref mist::logger::AnchorObject::erase_all and @ref redraw_all
  * (which acquire the registry mutex).  This keeps the lock order
  * @c registry → @c bar consistent across all code paths.
  */
@@ -49,32 +49,35 @@ namespace mist::logger
     // Construction / destruction
     // -------------------------------------------------------------------------
 
-    progress_bar::progress_bar(bar_style style)
+    ProgressBar::ProgressBar(BarStyle style)
         : style_(style)
     {
-        // anchor_object base constructor registers this in _registry().
+        // AnchorObject base constructor registers this in _registry().
         // rendered_line_count() returns 0 until the first update() call
         // sets active_, so erase_all() won't move up for unrendered bars.
     }
 
-    progress_bar::progress_bar(std::string tag, bar_style style)
+    ProgressBar::ProgressBar(std::string tag, BarStyle style)
         : tag_(std::move(tag)), style_(style)
     {
     }
 
-    void progress_bar::assign_tag(std::string tag)
+    void ProgressBar::assign_tag(std::string tag)
     {
         std::lock_guard<std::mutex> lk(mutex_);
         tag_ = std::move(tag);
+        suffix_width_ = -1;  // force layout recompute on next render so the
+                             // new tag width is reflected regardless of when
+                             // assign_tag() is called relative to update().
     }
 
-    void progress_bar::clear_tag()
+    void ProgressBar::clear_tag()
     {
         std::lock_guard<std::mutex> lk(mutex_);
         tag_.clear();
     }
 
-    progress_bar::~progress_bar()
+    ProgressBar::~ProgressBar()
     {
         // Safety net: if finish() was never called, commit whatever state we
         // have so the bar line isn't left dangling on screen.  We must hold
@@ -88,20 +91,20 @@ namespace mist::logger
             suffix_width_ = -1;
             _draw();
         }
-        // anchor_object base destructor deregisters from _registry().
+        // AnchorObject base destructor deregisters from _registry().
     }
 
     // -------------------------------------------------------------------------
-    // anchor_object interface
+    // AnchorObject interface
     // -------------------------------------------------------------------------
 
-    int progress_bar::rendered_line_count() const
+    int ProgressBar::rendered_line_count() const
     {
         std::lock_guard<std::mutex> lk(mutex_);
         return (suffix_width_ >= 0 && active_) ? 1 : 0;
     }
 
-    void progress_bar::render_line() const
+    void ProgressBar::render_line() const
     {
         // Called by redraw_all() after erase_all() has already positioned the
         // cursor.  redraw_all() holds the registry mutex; we add the bar's
@@ -117,27 +120,27 @@ namespace mist::logger
     // Public interface
     // -------------------------------------------------------------------------
 
-    bool progress_bar::is_active() const
+    bool ProgressBar::is_active() const
     {
         std::lock_guard<std::mutex> lk(mutex_);
         return active_;
     }
 
-    void progress_bar::update(double fraction, bool flush)
+    void ProgressBar::update(double fraction, bool flush)
     {
         {
             std::lock_guard<std::mutex> lk(mutex_);
             _update_state(static_cast<float>(std::clamp(fraction, 0.0, 1.0)),
                           std::nullopt, std::nullopt);
         }
-        // Delegate all cursor management to anchor_object.
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        // Delegate all cursor management to AnchorObject.
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush)
             std::cout << std::flush;
     }
 
-    void progress_bar::finish(bool flush)
+    void ProgressBar::finish(bool flush)
     {
         // 1. Update state to 100% under the mutex (B2 fix: previously called
         //    _update_state unlocked, violating its own "mutex_ must be held"
@@ -152,7 +155,7 @@ namespace mist::logger
         // 2. Erase the anchored band — this bar is still active and counts
         //    among the lines to erase. We hold no bar mutex here, only the
         //    registry mutex inside erase_all.
-        anchor_object::erase_all();
+        AnchorObject::erase_all();
 
         // 3. Emit the final 100% frame as a permanent scrolling line (B1 fix:
         //    previously the bar was deactivated before any draw, so render_line
@@ -173,7 +176,7 @@ namespace mist::logger
         }
 
         // 5. Redraw the remaining anchors below the committed line.
-        anchor_object::redraw_all();
+        AnchorObject::redraw_all();
 
         if (flush)
             std::cout << std::flush;
@@ -183,7 +186,7 @@ namespace mist::logger
     // Private helpers
     // -------------------------------------------------------------------------
 
-    int progress_bar::terminal_width()
+    int ProgressBar::terminal_width()
     {
 #if defined(MIST_HAS_IOCTL)
         struct winsize w{};
@@ -193,7 +196,7 @@ namespace mist::logger
         return 80;
     }
 
-    std::string progress_bar::format_duration(double seconds)
+    std::string ProgressBar::format_duration(double seconds)
     {
         const int h = static_cast<int>(seconds) / 3600;
         const int m = (static_cast<int>(seconds) % 3600) / 60;
@@ -208,7 +211,7 @@ namespace mist::logger
         return oss.str();
     }
 
-    void progress_bar::_update_state(float fraction,
+    void ProgressBar::_update_state(float fraction,
                                      std::optional<int64_t> current,
                                      std::optional<int64_t> total)
     {
@@ -253,7 +256,7 @@ namespace mist::logger
         }
     }
 
-    void progress_bar::_draw() const
+    void ProgressBar::_draw() const
     {
         // Pure draw at the current cursor position — no cursor movement.
         if (suffix_width_ < 0)
@@ -280,7 +283,7 @@ namespace mist::logger
         const int empty = bar_w - filled;
 
         std::string filled_str, tip_str, empty_str;
-        if (style_ == bar_style::BLOCK)
+        if (style_ == BarStyle::Block)
         {
             for (int i = 0; i < filled; ++i)
                 filled_str += "\xe2\x96\x88";
@@ -298,20 +301,20 @@ namespace mist::logger
         }
 
         std::cout << "\033[2K\r"
-                  << ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD, style_tag::UNDERLINE});
+                  << ansi(ColourTag::BrightGreen, {StyleTag::Bold, StyleTag::Underline});
 
         if (has_tag)
             std::cout << "[" << tag_ << "]";
         else
             std::cout << "[PROGRESS]";
 
-        std::cout << ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE})
+        std::cout << ansi(ColourTag::BrightGreen, {StyleTag::None})
                   << " ["
-                  << ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD})
+                  << ansi(ColourTag::BrightGreen, {StyleTag::Bold})
                   << filled_str << tip_str
-                  << ansi(colour_tag::WHITE, {style_tag::DIM})
+                  << ansi(ColourTag::White, {StyleTag::Dim})
                   << empty_str
-                  << ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE})
+                  << ansi(ColourTag::BrightGreen, {StyleTag::None})
                   << "]"
                   << ansi()
                   << padded

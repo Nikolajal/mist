@@ -1,6 +1,6 @@
 /**
- * @file hough_transform.cxx
- * @brief Implementation of @ref mist::ring_finding::hough_transform.
+ * @file HoughTransform.cxx
+ * @brief Implementation of @ref mist::ring_finding::HoughTransform.
  */
 
 #include <mist/ring_finding/hough_transform.h>
@@ -14,7 +14,7 @@ namespace mist::ring_finding
     //  Constructors
     // ============================================================
 
-    hough_transform::hough_transform(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
+    HoughTransform::HoughTransform(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
                                      float r_min, float r_max, float r_step, float cell_size)
     {
         build_lut(index_to_hit_xy, r_min, r_max, r_step, cell_size);
@@ -24,12 +24,12 @@ namespace mist::ring_finding
     //  LUT construction
     // ============================================================
 
-    void hough_transform::build_lut(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
+    void HoughTransform::build_lut(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
                                     float r_min, float r_max, float r_step, float cell_size)
     {
         cell_size_ = cell_size;
 
-        // Derive accumulator bounds from hit positions
+        // Derive accumulator bounds from Hit positions
         x_min_ = y_min_ = std::numeric_limits<float>::max();
         x_max_ = y_max_ = std::numeric_limits<float>::lowest();
         for (auto &[idx, pos] : index_to_hit_xy)
@@ -40,7 +40,7 @@ namespace mist::ring_finding
             y_max_ = std::max(y_max_, pos[1]);
         }
 
-        // Pad by r_max so ring centres outside the hit area are reachable
+        // Pad by r_max so ring centres outside the Hit area are reachable
         x_min_ -= r_max;
         x_max_ += r_max;
         y_min_ -= r_max;
@@ -55,7 +55,7 @@ namespace mist::ring_finding
 
         // Build LUT: for each key, for each R bin, which accumulator cells does it vote for?
         // Arc rasterisation samples the circle at angles spaced so that each
-        // accumulator cell on the arc is hit at least twice — this avoids
+        // accumulator cell on the arc is Hit at least twice — this avoids
         // undersampling at large radii where 360 fixed angles would leave gaps
         // (B11 fix).
         //   arc length over one angular step ≈ R · Δθ
@@ -104,14 +104,14 @@ namespace mist::ring_finding
 
         // std::to_string replaces ROOT's Form() for portable string formatting.
         mist::logger::info(
-            "(hough_transform::build_lut) LUT built: " + std::to_string(lut_.size()) + " keys, " + std::to_string(r_bins_.size()) + " R bins, grid " + std::to_string(nx_) + "x" + std::to_string(ny_));
+            "(HoughTransform::build_lut) LUT built: " + std::to_string(lut_.size()) + " keys, " + std::to_string(r_bins_.size()) + " R bins, grid " + std::to_string(nx_) + "x" + std::to_string(ny_));
     }
 
     // ============================================================
     //  Private helpers
     // ============================================================
 
-    int hough_transform::vote_and_find_peak(const std::vector<hit> &hits,
+    int HoughTransform::vote_and_find_peak(const std::vector<Hit> &hits,
                                             const std::vector<int> &active_indices,
                                             int &best_iR, int &best_cell)
     {
@@ -153,12 +153,12 @@ namespace mist::ring_finding
         return best_count;
     }
 
-    ring_result hough_transform::collect_ring_hits(const std::vector<hit> &hits,
+    RingResult HoughTransform::collect_ring_hits(const std::vector<Hit> &hits,
                                                    const std::vector<int> &active_indices,
                                                    float cx, float cy, float R,
                                                    float collection_radius) const
     {
-        ring_result result;
+        RingResult result;
         result.cx = cx;
         result.cy = cy;
         result.radius = R;
@@ -186,18 +186,18 @@ namespace mist::ring_finding
     //  Per-event ring finding
     // ============================================================
 
-    std::vector<ring_result> hough_transform::find_rings(const std::vector<hit> &hits,
+    std::vector<RingResult> HoughTransform::find_rings(const std::vector<Hit> &hits,
                                                          float threshold_fraction,
                                                          int min_hits,
                                                          int min_active,
                                                          int max_rings,
                                                          float collection_radius)
     {
-        std::vector<ring_result> found_rings;
+        std::vector<RingResult> found_rings;
 
         if (!is_lut_ready())
         {
-            mist::logger::error("(hough_transform::find_rings) LUT is empty — call build_lut() first.");
+            mist::logger::error("(HoughTransform::find_rings) LUT is empty — call build_lut() first.");
             return found_rings;
         }
 
@@ -228,7 +228,7 @@ namespace mist::ring_finding
             const float cy = y_min_ + best_iy * cell_size_;
             const float R = r_bins_[best_iR];
 
-            ring_result ring = collect_ring_hits(hits, active_indices, cx, cy, R, collection_radius);
+            RingResult ring = collect_ring_hits(hits, active_indices, cx, cy, R, collection_radius);
             ring.peak_votes = best_count;
 
             if (static_cast<int>(ring.hit_indices.size()) < min_hits)
@@ -253,7 +253,7 @@ namespace mist::ring_finding
         // the strongest candidate (B12 fix — the extraction order is *usually*
         // but not strictly monotonic).
         std::sort(found_rings.begin(), found_rings.end(),
-                  [](const ring_result &a, const ring_result &b)
+                  [](const RingResult &a, const RingResult &b)
                   { return a.peak_votes > b.peak_votes; });
 
         return found_rings;

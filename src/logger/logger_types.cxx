@@ -74,19 +74,19 @@ namespace mist::logger
         g_tty_checked.store(true, std::memory_order_release);
     }
 
-    std::string ansi(colour_tag colour,
-                     std::initializer_list<style_tag> styles,
-                     std::optional<bg_colour_tag> bg)
+    std::string ansi(ColourTag colour,
+                     std::initializer_list<StyleTag> styles,
+                     std::optional<BgColourTag> bg)
     {
         if (!is_colour_enabled())
             return {};
 
         std::ostringstream oss;
         oss << "\033[";
-        for (style_tag s : styles)
+        for (StyleTag s : styles)
         {
             // NONE (= 0) is SGR "reset all attributes" — emit it explicitly
-            // so callers can use {style_tag::NONE} to clear bold/underline/etc
+            // so callers can use {StyleTag::None} to clear bold/underline/etc
             // before applying a new colour. Previously this was skipped, which
             // caused attributes from a prior sequence to bleed into the next.
             oss << static_cast<int>(s) << ';';

@@ -12,14 +12,14 @@
  *
  * ### Anchored objects
  * Any object that occupies a fixed band of terminal lines (progress bars,
- * multi-bars, status panels) inherits from anchor_object and registers itself
+ * multi-bars, status panels) inherits from AnchorObject and registers itself
  * in a global list.  log() uses that list to know how many lines to erase
  * before printing and redraw after, keeping log output above the anchored
  * region at all times.
  *
  * ### Thread safety
  * The registry, the named-update map, and the level filter are all guarded
- * by a single internal recursive mutex (@ref anchor_object::registry_lock).
+ * by a single internal recursive mutex (@ref AnchorObject::registry_lock).
  * Free functions in this header acquire it around the erase → print → redraw
  * sequence so logging from multiple threads is safe.  Lock order across the
  * codebase is registry → bar; @ref render_line overrides may acquire their
@@ -27,7 +27,7 @@
  *
  * ### TTY-awareness
  * When stdout/stderr are not attached to a TTY (file redirection or pipe),
- * @ref anchor_object::erase_all / @ref redraw_all become no-ops and progress
+ * @ref AnchorObject::erase_all / @ref redraw_all become no-ops and progress
  * bars suppress all cursor-control output, keeping log files clean.  See
  * @ref is_tty in @c logger_types.h.
  */
@@ -59,19 +59,19 @@ namespace mist::logger
      * call — the lock order is therefore registry → bar, consistent across all
      * code paths.
      */
-    class anchor_object
+    class AnchorObject
     {
     public:
         /// @brief Register this anchor with the global registry.
-        anchor_object();
+        AnchorObject();
 
         /// @brief Deregister this anchor from the global registry.
-        virtual ~anchor_object();
+        virtual ~AnchorObject();
 
-        anchor_object(const anchor_object &) = delete;
-        anchor_object &operator=(const anchor_object &) = delete;
-        anchor_object(anchor_object &&) = delete;
-        anchor_object &operator=(anchor_object &&) = delete;
+        AnchorObject(const AnchorObject &) = delete;
+        AnchorObject &operator=(const AnchorObject &) = delete;
+        AnchorObject(AnchorObject &&) = delete;
+        AnchorObject &operator=(AnchorObject &&) = delete;
 
         /// @brief Number of terminal lines this anchor currently occupies.
         /// Return 0 before the first render so erase_all() skips it.
@@ -106,7 +106,7 @@ namespace mist::logger
         static std::unique_lock<std::recursive_mutex> registry_lock();
 
     private:
-        static std::vector<anchor_object *> &_registry();
+        static std::vector<AnchorObject *> &_registry();
         static std::recursive_mutex &_registry_mutex();
     };
 
@@ -116,13 +116,13 @@ namespace mist::logger
 
     /// @brief Set the minimum severity that @ref log will emit (DEBUG by default).
     /// @c PLAIN bypasses the filter and is always emitted.  Thread-safe.
-    void set_min_level(level_tag level);
+    void set_min_level(LevelTag level);
 
     /// @brief Current minimum-severity threshold for @ref log.
-    level_tag get_min_level();
+    LevelTag get_min_level();
 
     /// @brief Returns @c true if a message tagged @p level would be emitted.
-    bool check_level(level_tag level);
+    bool check_level(LevelTag level);
 
     // ------------------------------------------------------------------
     // Core log functions
@@ -141,7 +141,7 @@ namespace mist::logger
      * @note         ERROR and WARNING are written to @c std::cerr; everything else
      *               goes to @c std::cout.
      */
-    void log(level_tag tag, std::string_view msg, bool flush = true);
+    void log(LevelTag tag, std::string_view msg, bool flush = true);
 
     /**
      * @brief Print one scrolling line styled with a free colour/style choice.
@@ -154,23 +154,23 @@ namespace mist::logger
      * @param s    Brace-enclosed list of style modifiers (default: @c NONE).
      */
     void log(std::string_view msg,
-             colour_tag c,
-             std::initializer_list<style_tag> s = {style_tag::NONE});
+             ColourTag c,
+             std::initializer_list<StyleTag> s = {StyleTag::None});
 
     // ------------------------------------------------------------------
     // Convenience wrappers
     // ------------------------------------------------------------------
 
     /// @brief Log at ERROR severity (→ stderr).
-    inline void error  (const std::string &msg, bool flush = true) { log(level_tag::ERROR,   msg, flush); }
+    inline void error  (std::string_view msg, bool flush = true) { log(LevelTag::Error,   msg, flush); }
     /// @brief Log at WARNING severity (→ stderr).
-    inline void warning(const std::string &msg, bool flush = true) { log(level_tag::WARNING,  msg, flush); }
+    inline void warning(std::string_view msg, bool flush = true) { log(LevelTag::Warning,  msg, flush); }
     /// @brief Log at INFO severity (→ stdout).
-    inline void info   (const std::string &msg, bool flush = true) { log(level_tag::INFO,     msg, flush); }
+    inline void info   (std::string_view msg, bool flush = true) { log(LevelTag::Info,     msg, flush); }
     /// @brief Log at DEBUG severity (→ stdout).
-    inline void debug  (const std::string &msg, bool flush = true) { log(level_tag::DEBUG,    msg, flush); }
+    inline void debug  (std::string_view msg, bool flush = true) { log(LevelTag::Debug,    msg, flush); }
     /// @brief Log a plain unstyled message — bypasses the level filter.
-    inline void plain  (const std::string &msg, bool flush = true) { log(level_tag::PLAIN,    msg, flush); }
+    inline void plain  (std::string_view msg, bool flush = true) { log(LevelTag::Plain,    msg, flush); }
 
     // ------------------------------------------------------------------
     // In-place update line

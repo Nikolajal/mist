@@ -61,15 +61,13 @@ jobs:
 
       # -----------------------------------------------------------------------
       # 4. Run tests
-      #    On Windows the binary lands in build/bin/<Config>/test_logger.exe;
-      #    on Unix it is build/bin/test_logger.  A non-zero exit code from the
-      #    binary causes the step — and therefore the whole job — to fail,
-      #    which blocks the PR from being merged.
+      #    Driving tests through CTest avoids the per-OS binary-path branch
+      #    (Unix puts binaries in build/bin/, Windows in build/bin/<Config>/).
+      #    CTest picks up every executable registered with add_test() in
+      #    CMakeLists.txt — currently test_logger, test_rnd, test_hough — and
+      #    runs them in the configuration that was just built.  A failure in
+      #    any single test fails the whole job, which blocks the PR.
       # -----------------------------------------------------------------------
-      - name: Run tests (Unix)
-        if: runner.os != 'Windows'
-        run: ./build/bin/test_logger
-
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: ./build/bin/${{ matrix.build_type }}/test_logger.exe
+      - name: Run tests
+        working-directory: build
+        run: ctest --output-on-failure --build-config ${{ matrix.build_type }}

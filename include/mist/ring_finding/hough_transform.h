@@ -15,18 +15,18 @@ namespace mist::ring_finding
 {
 
     /**
-     * @file hough_transform.h
+     * @file HoughTransform.h
      * @brief Circular Hough-transform ring-finder.
      *
-     * The class operates on @ref hit — a plain POD struct that the caller
-     * populates from their detector-specific hit representation.
+     * The class operates on @ref Hit — a plain POD struct that the caller
+     * populates from their detector-specific Hit representation.
      *
      * ### Two-phase workflow
      *  1. **Setup** (once per run / geometry change) — call @ref build_lut with
      *     the channel-to-position map to pre-compute which accumulator cells each
      *     LUT key votes for at every candidate radius.
      *  2. **Per-event processing** — call @ref find_rings with a vector of
-     *     @ref hit. The method votes, finds the best peak, removes the tagged
+     *     @ref Hit. The method votes, finds the best peak, removes the tagged
      *     hits from the active set, resets the accumulator, and re-votes for the
      *     next ring. Returns a summary of all rings found.
      *
@@ -39,14 +39,14 @@ namespace mist::ring_finding
      *
      * ### Typical usage
      * @code{.cpp}
-     * mist::ring_finding::hough_transform ht;
+     * mist::ring_finding::HoughTransform ht;
      *
      * // --- Once per run ---
      * std::map<int, std::array<float,2>> geometry = load_geometry();
      * ht.build_lut(geometry, 30.f, 80.f, 1.f, 3.2f);
      *
      * // --- Per event ---
-     * std::vector<mist::ring_finding::hit> hits = make_hits(raw_hits);
+     * std::vector<mist::ring_finding::Hit> hits = make_hits(raw_hits);
      * auto rings = ht.find_rings(hits, 0.3f, 5);
      * @endcode
      */
@@ -56,17 +56,17 @@ namespace mist::ring_finding
     // ============================================================
 
     /**
-     * @brief Minimal hit descriptor consumed by @ref hough_transform.
+     * @brief Minimal Hit descriptor consumed by @ref HoughTransform.
      *
      * The caller is responsible for populating this struct from whatever
-     * detector-specific hit representation is in use. The @c lut_key must
-     * match the keys used when building the LUT via @ref hough_transform::build_lut.
+     * detector-specific Hit representation is in use. The @c lut_key must
+     * match the keys used when building the LUT via @ref HoughTransform::build_lut.
      */
-    struct hit
+    struct Hit
     {
         float x;     ///< Hit x-position in the detector plane [mm].
         float y;     ///< Hit y-position in the detector plane [mm].
-        float time;  ///< Calibrated hit time [ns].
+        float time;  ///< Calibrated Hit time [ns].
         int lut_key; ///< Key into the LUT — typically `global_channel_index / 4`.
     };
 
@@ -75,31 +75,31 @@ namespace mist::ring_finding
     // ============================================================
 
     /**
-     * @brief Describes a single ring candidate found by @ref hough_transform::find_rings.
+     * @brief Describes a single ring candidate found by @ref HoughTransform::find_rings.
      */
-    struct ring_result
+    struct RingResult
     {
         float cx;        ///< x-coordinate of the reconstructed ring centre [mm].
         float cy;        ///< y-coordinate of the reconstructed ring centre [mm].
         float radius;    ///< Reconstructed ring radius [mm].
         int peak_votes;  ///< Number of votes in the winning accumulator cell.
-        float mean_time; ///< Mean hit time of hits associated with this ring [ns].
+        float mean_time; ///< Mean Hit time of hits associated with this ring [ns].
 
-        /// Indices into the input @ref hit vector of hits assigned to this ring.
+        /// Indices into the input @ref Hit vector of hits assigned to this ring.
         std::vector<int> hit_indices;
     };
 
     // ============================================================
-    //  hough_transform
+    //  HoughTransform
     // ============================================================
 
     /**
      * @brief Circular Hough-transform ring-finder.
      *
      * The algorithm works in the (x, y) detector plane. For a given candidate
-     * radius R and a hit at position (hx, hy), the set of possible ring centres
+     * radius R and a Hit at position (hx, hy), the set of possible ring centres
      * lies on a circle of radius R centred at (hx, hy). The accumulator counts
-     * how many hit arcs pass through each (cx, cy, R) cell; a high-count cell
+     * how many Hit arcs pass through each (cx, cy, R) cell; a high-count cell
      * indicates a real ring.
      *
      * To avoid per-event arc-drawing the class pre-computes a look-up table (LUT)
@@ -112,16 +112,31 @@ namespace mist::ring_finding
      * multiple threads concurrently. The per-event accumulator is mutated during
      * @ref find_rings and is **not** thread-safe; use separate instances per thread.
      */
-    class hough_transform
+    class HoughTransform
     {
     public:
         // ================================================================
         //  Constructors
         // ================================================================
 
+        // ================================================================
+        //  Named defaults — avoids magic-number repetition across callers
+        // ================================================================
+
+        /// Default linear cell size for the (x, y) accumulator grid [mm].
+        static constexpr float kDefaultCellSizeMm = 3.2f;
+
+        /// Default radial half-width within which a Hit is assigned to a
+        /// ring arc during the collection step [mm].
+        static constexpr float kDefaultCollectionRadiusMm = 6.f;
+
+        // ================================================================
+        //  Constructors
+        // ================================================================
+
         /// Default constructor — creates an uninitialised finder.
         /// @note @ref build_lut must be called before @ref find_rings.
-        hough_transform() = default;
+        HoughTransform() = default;
 
         /**
          * @brief Convenience constructor that immediately builds the LUT.
@@ -132,7 +147,7 @@ namespace mist::ring_finding
          * @param r_step           Radial bin step [mm].
          * @param cell_size        Accumulator cell size in (x, y) [mm].
          */
-        hough_transform(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
+        HoughTransform(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
                         float r_min, float r_max, float r_step, float cell_size);
 
         // ================================================================
@@ -147,7 +162,7 @@ namespace mist::ring_finding
          * stores their flat indices. Duplicate cells within each R bin are
          * removed.
          *
-         * @param index_to_hit_xy  Map from LUT key to hit position [mm].
+         * @param index_to_hit_xy  Map from LUT key to Hit position [mm].
          * @param r_min            Minimum ring radius [mm].
          * @param r_max            Maximum ring radius [mm].
          * @param r_step           Step between candidate radii [mm].
@@ -169,24 +184,24 @@ namespace mist::ring_finding
         ///@{
 
         /**
-         * @brief Find ring candidates in a vector of @ref hit.
+         * @brief Find ring candidates in a vector of @ref Hit.
          *
          * For each pass:
-         *  1. Vote using the active hit set and the pre-computed LUT.
+         *  1. Vote using the active Hit set and the pre-computed LUT.
          *  2. Find the global accumulator peak.
          *  3. Collect hits within @p collection_radius of the ring arc.
          *  4. Remove those hits from the active set.
          *  5. Reset the accumulator and repeat for the next ring.
          *
-         * @param hits                Input hit vector (read-only).
+         * @param hits                Input Hit vector (read-only).
          * @param threshold_fraction  Minimum fraction of currently-active hits
          *                            required in the peak cell (range 0–1).
          * @param min_hits            Minimum absolute vote count for acceptance.
          * @param min_active          Minimum active hits to attempt another ring.
          * @param max_rings           Maximum number of rings to extract (default 2).
-         * @param collection_radius   Distance from the ring arc within which a hit
+         * @param collection_radius   Distance from the ring arc within which a Hit
          *                            is assigned to the ring [mm] (default 6).
-         * @return                    Vector of @ref ring_result.  The result is
+         * @return                    Vector of @ref RingResult.  The result is
          *                            sorted in descending @c peak_votes order
          *                            after extraction, so callers may rely on
          *                            @c rings[0] being the strongest candidate
@@ -195,12 +210,12 @@ namespace mist::ring_finding
          *                            removing its hits" (which is *typically*
          *                            but not strictly monotonic).
          */
-        std::vector<ring_result> find_rings(const std::vector<hit> &hits,
+        std::vector<RingResult> find_rings(const std::vector<Hit> &hits,
                                             float threshold_fraction,
                                             int min_hits,
                                             int min_active,
                                             int max_rings = 2,
-                                            float collection_radius = 6.f);
+                                            float collection_radius = kDefaultCollectionRadiusMm);
 
         ///@}
 
@@ -225,7 +240,7 @@ namespace mist::ring_finding
         //  Accumulator geometry
         // ================================================================
 
-        float cell_size_ = 3.2f; ///< Side length of one accumulator cell [mm].
+        float cell_size_ = kDefaultCellSizeMm; ///< Side length of one accumulator cell [mm].
         float x_min_ = 0.f;      ///< Lower-left x of the accumulator [mm].
         float x_max_ = 0.f;      ///< Upper-right x of the accumulator [mm].
         float y_min_ = 0.f;      ///< Lower-left y of the accumulator [mm].
@@ -251,28 +266,28 @@ namespace mist::ring_finding
         /**
          * @brief Fill the accumulator and return the index of the global maximum.
          *
-         * @param hits            Full hit vector.
+         * @param hits            Full Hit vector.
          * @param active_indices  Indices into @p hits to vote with.
          * @param[out] best_iR    Radial bin index of the maximum cell.
          * @param[out] best_cell  Flat (iy * nx + ix) index of the maximum cell.
          * @return                Vote count of the maximum cell.
          */
-        int vote_and_find_peak(const std::vector<hit> &hits,
+        int vote_and_find_peak(const std::vector<Hit> &hits,
                                const std::vector<int> &active_indices,
                                int &best_iR, int &best_cell);
 
         /**
          * @brief Collect hits within @p collection_radius of a ring arc.
          *
-         * @param hits              Full hit vector.
+         * @param hits              Full Hit vector.
          * @param active_indices    Candidate indices to test.
          * @param cx                Ring centre x [mm].
          * @param cy                Ring centre y [mm].
          * @param R                 Ring radius [mm].
          * @param collection_radius Acceptance half-width around the arc [mm].
-         * @return                  Populated @ref ring_result.
+         * @return                  Populated @ref RingResult.
          */
-        ring_result collect_ring_hits(const std::vector<hit> &hits,
+        RingResult collect_ring_hits(const std::vector<Hit> &hits,
                                       const std::vector<int> &active_indices,
                                       float cx, float cy, float R,
                                       float collection_radius) const;

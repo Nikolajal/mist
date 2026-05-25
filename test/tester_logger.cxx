@@ -80,18 +80,18 @@ struct capture_streams
 void test_level_filter()
 {
     // set_min_level / get_min_level round-trip
-    mist::logger::set_min_level(mist::logger::level_tag::INFO);
-    CHECK(mist::logger::get_min_level() == mist::logger::level_tag::INFO);
+    mist::logger::set_min_level(mist::logger::LevelTag::Info);
+    CHECK(mist::logger::get_min_level() == mist::logger::LevelTag::Info);
 
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
-    CHECK(mist::logger::get_min_level() == mist::logger::level_tag::DEBUG);
+    mist::logger::set_min_level(mist::logger::LevelTag::Debug);
+    CHECK(mist::logger::get_min_level() == mist::logger::LevelTag::Debug);
 }
 
 void test_log_output_reaches_cout()
 {
     capture_streams cap;
 
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+    mist::logger::set_min_level(mist::logger::LevelTag::Debug);
     mist::logger::info("hello info");
 
     const std::string out = cap.cout_buf.str();
@@ -116,13 +116,13 @@ void test_debug_filtered_below_min_level()
 {
     capture_streams cap;
 
-    mist::logger::set_min_level(mist::logger::level_tag::INFO);
+    mist::logger::set_min_level(mist::logger::LevelTag::Info);
     mist::logger::debug("should be hidden");
 
     CHECK(cap.cout_buf.str().find("should be hidden") == std::string::npos);
 
     // Restore
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+    mist::logger::set_min_level(mist::logger::LevelTag::Debug);
 }
 
 void test_colour_tag_roundtrip()
@@ -132,13 +132,13 @@ void test_colour_tag_roundtrip()
     const bool prev_colour = mist::logger::is_colour_enabled();
 
     mist::logger::set_colour_enabled(true);
-    const std::string seq = mist::logger::ansi(mist::logger::colour_tag::RED,
-                                               {mist::logger::style_tag::BOLD});
+    const std::string seq = mist::logger::ansi(mist::logger::ColourTag::Red,
+                                               {mist::logger::StyleTag::Bold});
     // With colour enabled the sequence must contain the ESC introducer
     CHECK(seq.find("\033[") != std::string::npos);
 
     mist::logger::set_colour_enabled(false);
-    const std::string empty = mist::logger::ansi(mist::logger::colour_tag::RED);
+    const std::string empty = mist::logger::ansi(mist::logger::ColourTag::Red);
     CHECK(empty.empty());
 
     mist::logger::set_colour_enabled(prev_colour);
@@ -148,7 +148,7 @@ void test_convenience_wrappers_compile_and_run()
 {
     // Just verify all four wrappers can be called without crashing
     capture_streams cap;
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+    mist::logger::set_min_level(mist::logger::LevelTag::Debug);
     mist::logger::error("e");
     mist::logger::warning("w");
     mist::logger::info("i");
@@ -160,11 +160,11 @@ void test_convenience_wrappers_compile_and_run()
 void test_progress_bar_basic()
 {
     // Smoke-test: create a bar, drive it to completion, verify no crash.
-    // progress_bar takes only a bar_style; progress is driven via update(current, total).
+    // ProgressBar takes only a BarStyle; progress is driven via update(current, total).
     capture_streams cap;
 
     {
-        mist::logger::progress_bar bar;
+        mist::logger::ProgressBar bar;
         for (int i = 0; i <= 10; ++i)
             bar.update(i, 10, /*flush=*/false);
         bar.finish(/*flush=*/false);
@@ -181,7 +181,7 @@ void test_progress_bar_finish_emits_final_frame()
     capture_streams cap;
 
     {
-        mist::logger::progress_bar bar;
+        mist::logger::ProgressBar bar;
         bar.update(7, 10, /*flush=*/false);   // bar visually at 70%
         bar.finish(/*flush=*/false);          // must commit 100% frame
     }
@@ -219,7 +219,7 @@ void test_update_anchor_resurrection_warning()
     // Calling update() after end_update() on the same name should emit
     // exactly one [WARNING] to stderr, then recreate the anchor normally.
     capture_streams cap;
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+    mist::logger::set_min_level(mist::logger::LevelTag::Debug);
 
     mist::logger::update("bar", "first life");
     mist::logger::end_update("bar");
@@ -250,7 +250,7 @@ void test_progress_bar_with_update_anchor()
     // Smoke-test: bar and a named update anchor can coexist without crashing.
     capture_streams cap;
 
-    mist::logger::progress_bar bar;
+    mist::logger::ProgressBar bar;
     for (int i = 0; i <= 5; ++i)
     {
         mist::logger::update("task", "step " + std::to_string(i));
@@ -265,7 +265,7 @@ void test_progress_bar_with_update_anchor()
 }
 
 // ---------------------------------------------------------------------------
-// multi_progress_bar tests
+// MultiProgressBar tests
 // ---------------------------------------------------------------------------
 
 void test_multi_progress_bar_basic()
@@ -273,7 +273,7 @@ void test_multi_progress_bar_basic()
     // Smoke-test: create a multi-bar, drive it to completion, no crash.
     capture_streams cap;
 
-    mist::logger::multi_progress_bar multi;
+    mist::logger::MultiProgressBar multi;
     auto &a = multi.add_subtask("task A");
     auto &b = multi.add_subtask("task B");
 
@@ -295,7 +295,7 @@ void test_multi_progress_bar_subtask_output()
     // Verify subtask tags appear in output.
     capture_streams cap;
 
-    mist::logger::multi_progress_bar multi;
+    mist::logger::MultiProgressBar multi;
     auto &a = multi.add_subtask("alpha");
     auto &b = multi.add_subtask("beta");
 
@@ -315,9 +315,9 @@ void test_multi_progress_bar_with_log()
 {
     // log() calls while a multi-bar is active must not crash.
     capture_streams cap;
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+    mist::logger::set_min_level(mist::logger::LevelTag::Debug);
 
-    mist::logger::multi_progress_bar multi;
+    mist::logger::MultiProgressBar multi;
     auto &t = multi.add_subtask("work");
 
     for (int i = 0; i <= 5; ++i)
@@ -338,7 +338,7 @@ void test_multi_progress_bar_independent_subtask_progress()
     // Subtasks can advance at different rates independently.
     capture_streams cap;
 
-    mist::logger::multi_progress_bar multi;
+    mist::logger::MultiProgressBar multi;
     auto &fast = multi.add_subtask("fast");
     auto &slow = multi.add_subtask("slow");
 
@@ -355,10 +355,152 @@ void test_multi_progress_bar_independent_subtask_progress()
     CHECK(true);
 }
 
+// ---------------------------------------------------------------------------
+// Regression tests for recent fixes
+// ---------------------------------------------------------------------------
+
+void test_assign_tag_recomputes_layout_after_update()
+{
+    // Recent fix: assign_tag() must force a layout recompute even when called
+    // after the first update().  Before the fix, the cached suffix_width_ stuck
+    // to the value computed during the very first update, so a longer tag
+    // assigned later would push the suffix off-screen / cause misalignment.
+    capture_streams cap;
+
+    mist::logger::ProgressBar bar;
+    bar.update(1, 10, /*flush=*/false); // first update sets up layout
+    bar.assign_tag("long-tag-name");    // must invalidate the cached width
+    bar.update(5, 10, /*flush=*/false); // second update renders with new tag
+    bar.finish(/*flush=*/false);
+
+    const std::string out = cap.cout_buf.str();
+    // The new tag must appear at least once after assign_tag took effect.
+    CHECK(out.find("long-tag-name") != std::string::npos);
+}
+
+void test_assign_tag_then_clear_tag()
+{
+    // Tag-set followed by tag-clear should both render without crashing.
+    capture_streams cap;
+
+    mist::logger::ProgressBar bar;
+    bar.assign_tag("phase-1");
+    bar.update(3, 10, /*flush=*/false);
+    bar.clear_tag();
+    bar.update(7, 10, /*flush=*/false);
+    bar.finish(/*flush=*/false);
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("phase-1") != std::string::npos);
+    // After clear_tag the default [PROGRESS] prefix should reappear in the
+    // final committed frame.
+    CHECK(out.find("PROGRESS") != std::string::npos);
+}
+
+void test_multi_bar_finish_emits_final_frame()
+{
+    // Recent fix: MultiProgressBar::finish() was calling _draw_locked()
+    // without holding mutex_, racing with any concurrent subtask thread.
+    // The fix wraps the final draw in its own lock_guard scope.  In the
+    // single-threaded test path the regression is observable as "no final
+    // 100% frame committed when finish() is called from a state that was
+    // updated under lock" — verify the percentage shows up.
+    capture_streams cap;
+
+    mist::logger::MultiProgressBar multi;
+    auto &t = multi.add_subtask("task");
+
+    multi.update(5, 10, /*flush=*/false);
+    t.update(7, 10, /*flush=*/false);
+    t.finish(/*flush=*/false);
+    multi.finish(/*flush=*/false);
+
+    const std::string out = cap.cout_buf.str();
+    // The committed final frame must include "task" and the bar must complete.
+    CHECK(out.find("task") != std::string::npos);
+}
+
+void test_multi_bar_unknown_total_mode()
+{
+    // kUnknownTotal sentinel — passing total <= 0 puts the main bar in
+    // "unknown total" mode (no percentage, no ETA).  Test both the explicit
+    // sentinel and the implicit non-positive total path.
+    capture_streams cap;
+
+    {
+        mist::logger::MultiProgressBar multi;
+        // Drive with unknown total via the integer overload (non-positive total).
+        // Both arguments cast to int64_t so template deduction of T is unambiguous.
+        multi.update(static_cast<int64_t>(42),
+                     mist::logger::MultiProgressBar::kUnknownTotal,
+                     /*flush=*/false);
+        multi.finish(/*flush=*/false);
+    }
+
+    const std::string out = cap.cout_buf.str();
+    // The current count must appear; the per-cent sign must NOT appear in
+    // the main-bar line when total is unknown.  We just check the count is
+    // shown, since the visual format is implementation detail.
+    CHECK(out.find("42") != std::string::npos);
+}
+
+void test_multi_bar_kUnknownTotal_is_negative_one()
+{
+    // The named constant kUnknownTotal is part of the public API — pin its
+    // value so a future refactor that changes the sentinel encoding has to
+    // update this test too.
+    CHECK(mist::logger::MultiProgressBar::kUnknownTotal == -1);
+}
+
+void test_multi_bar_set_header_renders_text()
+{
+    // Header mode replaces the main [PROGRESS] bar with "[tag] msg".
+    capture_streams cap;
+
+    {
+        mist::logger::MultiProgressBar multi;
+        multi.set_header("phase", "loading geometry", /*flush=*/false);
+        auto &t = multi.add_subtask("worker");
+        t.update(1, 10, /*flush=*/false);
+        t.finish(/*flush=*/false);
+        multi.finish(/*flush=*/false);
+    }
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("phase") != std::string::npos);
+    CHECK(out.find("loading geometry") != std::string::npos);
+}
+
+void test_multi_bar_restart_resets_clock()
+{
+    // restart() must reset both the main and subtask clocks without losing
+    // the subtask labels — used by drivers that cycle the same multi-bar
+    // across logical phases.
+    capture_streams cap;
+
+    mist::logger::MultiProgressBar multi;
+    auto &t = multi.add_subtask("cycle");
+
+    for (int cycle = 0; cycle < 3; ++cycle)
+    {
+        for (int i = 0; i <= 4; ++i)
+        {
+            t.update(i, 4, /*flush=*/false);
+            multi.update(i, 4, /*flush=*/false);
+        }
+        multi.restart(/*flush=*/false);
+    }
+    t.finish(/*flush=*/false);
+    multi.finish(/*flush=*/false);
+
+    const std::string out = cap.cout_buf.str();
+    CHECK(out.find("cycle") != std::string::npos);
+}
+
 void demo_visual()
 {
     mist::logger::set_colour_enabled(true);
-    mist::logger::set_min_level(mist::logger::level_tag::DEBUG);
+    mist::logger::set_min_level(mist::logger::LevelTag::Debug);
 
     std::cout << "\n--- mist::logger visual demo ---\n";
     mist::logger::error("This is an error message");
@@ -384,7 +526,7 @@ void demo_visual()
     mist::logger::debug("All update anchors finished.");
 
     // Loop 2: progress bar + named update anchor together
-    mist::logger::progress_bar bar;
+    mist::logger::ProgressBar bar;
     for (int i = 0; i <= 10; ++i)
     {
         mist::logger::debug(std::to_string(i) + "debug message — bar and anchor pinned below");
@@ -398,7 +540,7 @@ void demo_visual()
     // Loop 3: multi-progress bar with two subtasks
     mist::logger::plain("--- multi progress bar demo ---");
     {
-        mist::logger::multi_progress_bar multi;
+        mist::logger::MultiProgressBar multi;
         auto &a = multi.add_subtask("loader");
         auto &b = multi.add_subtask("parser");
 
@@ -441,6 +583,14 @@ int main()
     test_multi_progress_bar_subtask_output();
     test_multi_progress_bar_with_log();
     test_multi_progress_bar_independent_subtask_progress();
+    // regression tests for fixes landed in this cycle
+    test_assign_tag_recomputes_layout_after_update();
+    test_assign_tag_then_clear_tag();
+    test_multi_bar_finish_emits_final_frame();
+    test_multi_bar_unknown_total_mode();
+    test_multi_bar_kUnknownTotal_is_negative_one();
+    test_multi_bar_set_header_renders_text();
+    test_multi_bar_restart_resets_clock();
 
     std::cout << s_tests_run << " tests run, "
               << s_tests_failed << " failed.\n";

@@ -1,13 +1,13 @@
 /**
- * @file multi_progress_bar.cxx
- * @brief Implementation of @ref mist::logger::multi_progress_bar and the
- *        associated @ref mist::logger::subtask_progress_bar.
+ * @file MultiProgressBar.cxx
+ * @brief Implementation of @ref mist::logger::MultiProgressBar and the
+ *        associated @ref mist::logger::SubtaskProgressBar.
  *
  * Locking model:
  *  - One @c std::mutex per multi-bar guards the main fraction, the subtask
  *    vector, finished_count_, the cached widths, and every subtask's per-line
  *    state.
- *  - The global @ref anchor_object registry mutex is the outer lock; the
+ *  - The global @ref AnchorObject registry mutex is the outer lock; the
  *    multi-bar's @c mutex_ is the inner lock.  Subtask update paths take the
  *    multi-bar mutex first, mutate state, RELEASE, then call the registry-
  *    locked anchor operations.  @ref render_line acquires the multi-bar
@@ -61,17 +61,17 @@ namespace mist::logger
     }
 
     // =========================================================================
-    // multi_progress_bar — ctor / dtor
+    // MultiProgressBar — ctor / dtor
     // =========================================================================
 
-    multi_progress_bar::multi_progress_bar(bar_style style)
+    MultiProgressBar::MultiProgressBar(BarStyle style)
         : style_(style), start_(clock_t::now())
     {
-        // anchor_object base constructor registers this in _registry().
+        // AnchorObject base constructor registers this in _registry().
         // rendered_line_count() returns 0 until active_ is set on first update.
     }
 
-    multi_progress_bar::~multi_progress_bar()
+    MultiProgressBar::~MultiProgressBar()
     {
         if (active_)
         {
@@ -85,22 +85,22 @@ namespace mist::logger
     // subtask management
     // =========================================================================
 
-    subtask_progress_bar &multi_progress_bar::add_subtask(std::string tag)
+    SubtaskProgressBar &MultiProgressBar::add_subtask(std::string tag)
     {
         std::lock_guard<std::mutex> lk(mutex_);
         subtasks_.push_back(
-            std::unique_ptr<subtask_progress_bar>(
-                new subtask_progress_bar(std::move(tag), *this)));
+            std::unique_ptr<SubtaskProgressBar>(
+                new SubtaskProgressBar(std::move(tag), *this)));
         ++total_subtasks_;
         tag_col_width_ = -1;
         return *subtasks_.back();
     }
 
     // =========================================================================
-    // anchor_object interface
+    // AnchorObject interface
     // =========================================================================
 
-    void multi_progress_bar::render_line() const
+    void MultiProgressBar::render_line() const
     {
         // Called by redraw_all() — cursor already positioned by erase_all().
         // The registry mutex is held by the caller; we add this bar's own
@@ -110,26 +110,26 @@ namespace mist::logger
         std::lock_guard<std::mutex> lk(mutex_);
         if (!active_ || last_line_count_ == 0)
             return;
-        const_cast<multi_progress_bar *>(this)->_draw_locked();
+        const_cast<MultiProgressBar *>(this)->_draw_locked();
     }
 
     // =========================================================================
     // Public update / finish
     // =========================================================================
 
-    void multi_progress_bar::update(double fraction, bool flush)
+    void MultiProgressBar::update(double fraction, bool flush)
     {
         {
             std::lock_guard<std::mutex> lk(mutex_);
             _update_state_locked(
                 static_cast<float>(std::clamp(fraction, 0.0, 1.0)));
         }
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
     }
 
-    void multi_progress_bar::set_header(std::string tag, std::string_view msg, bool flush)
+    void MultiProgressBar::set_header(std::string tag, std::string_view msg, bool flush)
     {
         {
             std::lock_guard<std::mutex> lk(mutex_);
@@ -138,12 +138,12 @@ namespace mist::logger
             header_msg_  = std::string(msg);
             _update_state_locked(main_fraction_);
         }
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
     }
 
-    void multi_progress_bar::finish(bool flush)
+    void MultiProgressBar::finish(bool flush)
     {
         {
             std::lock_guard<std::mutex> lk(mutex_);
@@ -154,10 +154,17 @@ namespace mist::logger
             // Keep last_line_count_ intact — erase_all() needs it to know
             // how many lines to move up. We clear it after erasing.
         }
-        anchor_object::erase_all();   // uses last_line_count_ via rendered_line_count()
+        AnchorObject::erase_all();   // uses last_line_count_ via rendered_line_count()
         last_line_count_ = 0;         // now safe to zero — erase is done
-        anchor_object::redraw_all();  // redraws other anchors only (active_=false skips us)
-        _draw_locked();               // commit final frame as permanent scrolling output
+        AnchorObject::redraw_all();  // redraws other anchors only (active_=false skips us)
+        {
+            // Hold mutex_ while calling _draw_locked() so state reads in
+            // _render_main / _render_subtask cannot race with a concurrent
+            // update() that re-activates the bar.  (Contract: _draw_locked
+            // requires the caller to hold mutex_.)
+            std::lock_guard<std::mutex> lk(mutex_);
+            _draw_locked();           // commit final frame as permanent scrolling output
+        }
         if (flush) std::cout << std::flush;
     }
 
@@ -165,7 +172,7 @@ namespace mist::logger
     // Private — state update (call with mutex_ held)
     // =========================================================================
 
-    void multi_progress_bar::_update_state_locked(float frac)
+    void MultiProgressBar::_update_state_locked(float frac)
     {
         // Activate on first call.
         if (!active_)
@@ -194,7 +201,7 @@ namespace mist::logger
     // Private — pure draw (no cursor movement, no mutex acquisition)
     // =========================================================================
 
-    void multi_progress_bar::_draw_locked()
+    void MultiProgressBar::_draw_locked()
     {
         // On a non-TTY destination, suppress the entire multi-bar block so
         // log files / piped output stay free of cursor-control escapes and
@@ -263,19 +270,19 @@ namespace mist::logger
     // re-checked after re-acquiring the lock.
     // ─────────────────────────────────────────────────────────────────────────
 
-    void multi_progress_bar::_subtask_updated_locked(
-        const subtask_progress_bar * /*who*/, std::unique_lock<std::mutex> &lk, bool flush)
+    void MultiProgressBar::_subtask_updated_locked(
+        const SubtaskProgressBar * /*who*/, std::unique_lock<std::mutex> &lk, bool flush)
     {
         _update_state_locked(main_fraction_);
         lk.unlock();  // see "Subtask callback notes" above
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
         lk.lock();
     }
 
-    void multi_progress_bar::_subtask_finished_locked(
-        subtask_progress_bar *who, std::unique_lock<std::mutex> &lk, bool flush)
+    void MultiProgressBar::_subtask_finished_locked(
+        SubtaskProgressBar *who, std::unique_lock<std::mutex> &lk, bool flush)
     {
         if (!who->active_)
             return;
@@ -293,23 +300,23 @@ namespace mist::logger
         ++finished_count_;
         _update_state_locked(main_fraction_);
         lk.unlock();  // see "Subtask callback notes" above
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
         lk.lock();
     }
 
-    void multi_progress_bar::_set_main_fraction(float frac, bool flush)
+    void MultiProgressBar::_set_main_fraction(float frac, bool flush)
     {
         std::unique_lock<std::mutex> lk(mutex_);
         _update_state_locked(frac);
         lk.unlock();
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
     }
 
-    void multi_progress_bar::_set_main_progress(float frac, int64_t current,
+    void MultiProgressBar::_set_main_progress(float frac, int64_t current,
                                                 int64_t total, bool flush)
     {
         {
@@ -318,24 +325,24 @@ namespace mist::logger
             main_total_   = total;
             _update_state_locked(frac);
         }
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
     }
 
-    void multi_progress_bar::set_unit(std::string unit, bool flush)
+    void MultiProgressBar::set_unit(std::string unit, bool flush)
     {
         {
             std::lock_guard<std::mutex> lk(mutex_);
             main_unit_ = std::move(unit);
             suffix_width_ = -1; // force recompute on next render
         }
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
     }
 
-    void multi_progress_bar::restart(bool flush)
+    void MultiProgressBar::restart(bool flush)
     {
         {
             std::lock_guard<std::mutex> lk(mutex_);
@@ -360,22 +367,22 @@ namespace mist::logger
                 s->start_set_ = true;
             }
         }
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
         if (flush) std::cout << std::flush;
     }
 
     // =========================================================================
     // _render_main
     // =========================================================================
-    void multi_progress_bar::_render_main(std::string &out) const
+    void MultiProgressBar::_render_main(std::string &out) const
     {
         if (header_mode_)
         {
             out += "\033[2K\r";
-            out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD, style_tag::UNDERLINE});
+            out += ansi(ColourTag::BrightGreen, {StyleTag::Bold, StyleTag::Underline});
             out += "[" + header_tag_ + "]";
-            out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE});
+            out += ansi(ColourTag::BrightGreen, {StyleTag::None});
             out += " " + header_msg_;
             out += ansi();
             return;
@@ -450,7 +457,7 @@ namespace mist::logger
             padded += std::string(suffix_width_ - padded.size(), ' ');
 
         std::string fill_s, tip_s, empty_s;
-        if (style_ == bar_style::BLOCK)
+        if (style_ == BarStyle::Block)
         {
             for (int i = 0; i < filled; ++i) fill_s  += "\xe2\x96\x88";
             for (int i = 0; i < empty;  ++i) empty_s += "\xe2\x96\x91";
@@ -466,15 +473,15 @@ namespace mist::logger
         }
 
         out += "\033[2K\r";
-        out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD, style_tag::UNDERLINE});
+        out += ansi(ColourTag::BrightGreen, {StyleTag::Bold, StyleTag::Underline});
         out += "[PROGRESS]";
-        out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE});
+        out += ansi(ColourTag::BrightGreen, {StyleTag::None});
         out += " [";
-        out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD});
+        out += ansi(ColourTag::BrightGreen, {StyleTag::Bold});
         out += fill_s + tip_s;
-        out += ansi(colour_tag::WHITE, {style_tag::DIM});
+        out += ansi(ColourTag::White, {StyleTag::Dim});
         out += empty_s;
-        out += ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE});
+        out += ansi(ColourTag::BrightGreen, {StyleTag::None});
         out += "]";
         out += ansi();
         out += padded;
@@ -483,8 +490,8 @@ namespace mist::logger
     // =========================================================================
     // _render_subtask
     // =========================================================================
-    void multi_progress_bar::_render_subtask(std::string &out,
-                                              const subtask_progress_bar &s) const
+    void MultiProgressBar::_render_subtask(std::string &out,
+                                              const SubtaskProgressBar &s) const
     {
         const int tw = _terminal_width();
 
@@ -529,7 +536,7 @@ namespace mist::logger
             padded += std::string(worst_w - padded.size(), ' ');
 
         std::string fill_s, tip_s, empty_s;
-        if (style_ == bar_style::BLOCK)
+        if (style_ == BarStyle::Block)
         {
             for (int i = 0; i < filled; ++i) fill_s  += "\xe2\x96\x88";
             for (int i = 0; i < empty;  ++i) empty_s += "\xe2\x96\x91";
@@ -545,13 +552,13 @@ namespace mist::logger
         }
 
         out += "\033[2K\r";
-        out += ansi(colour_tag::CYAN, {style_tag::NONE});
+        out += ansi(ColourTag::Cyan, {StyleTag::None});
         out += tag_col + "[";
-        out += ansi(colour_tag::CYAN, {style_tag::BOLD});
+        out += ansi(ColourTag::Cyan, {StyleTag::Bold});
         out += fill_s + tip_s;
-        out += ansi(colour_tag::WHITE, {style_tag::DIM});
+        out += ansi(ColourTag::White, {StyleTag::Dim});
         out += empty_s;
-        out += ansi(colour_tag::CYAN, {style_tag::NONE});
+        out += ansi(ColourTag::Cyan, {StyleTag::None});
         out += "]";
         out += ansi();
         out += padded;
@@ -561,7 +568,7 @@ namespace mist::logger
     // _emit_line / _terminal_width / _format_duration
     // =========================================================================
 
-    void multi_progress_bar::_emit_line(std::string &out,
+    void MultiProgressBar::_emit_line(std::string &out,
                                         const std::string &line,
                                         int /*term_width*/)
     {
@@ -569,7 +576,7 @@ namespace mist::logger
         out += line;
     }
 
-    int multi_progress_bar::_terminal_width()
+    int MultiProgressBar::_terminal_width()
     {
 #if defined(MIST_MPB_HAS_IOCTL)
         struct winsize w{};
@@ -579,7 +586,7 @@ namespace mist::logger
         return 80;
     }
 
-    std::string multi_progress_bar::_format_duration(double seconds)
+    std::string MultiProgressBar::_format_duration(double seconds)
     {
         const int h = static_cast<int>(seconds) / 3600;
         const int m = (static_cast<int>(seconds) % 3600) / 60;
@@ -593,22 +600,22 @@ namespace mist::logger
     }
 
     // =========================================================================
-    // subtask_progress_bar — public methods
+    // SubtaskProgressBar — public methods
     // =========================================================================
 
-    void subtask_progress_bar::update(double fraction, bool flush)
+    void SubtaskProgressBar::update(double fraction, bool flush)
     {
         _update_impl(static_cast<float>(std::clamp(fraction, 0.0, 1.0)),
                      std::nullopt, std::nullopt, flush);
     }
 
-    void subtask_progress_bar::finish(bool flush)
+    void SubtaskProgressBar::finish(bool flush)
     {
         std::unique_lock<std::mutex> lk(parent_.mutex_);
         parent_._subtask_finished_locked(this, lk, flush);
     }
 
-    void subtask_progress_bar::_update_impl(float fraction,
+    void SubtaskProgressBar::_update_impl(float fraction,
                                             std::optional<int64_t> current,
                                             std::optional<int64_t> total,
                                             bool flush)
@@ -634,7 +641,7 @@ namespace mist::logger
         parent_._subtask_updated_locked(this, lk, flush);
     }
 
-    void subtask_progress_bar::restart(bool flush)
+    void SubtaskProgressBar::restart(bool flush)
     {
         std::unique_lock<std::mutex> lk(parent_.mutex_);
         // Resurrection bookkeeping: if this subtask was previously finished,

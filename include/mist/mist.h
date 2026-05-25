@@ -8,19 +8,19 @@
  * Individual subsystem headers can be included directly for finer control:
  *
  *   #include <mist/mist.h>                        // everything
- *   #include <mist/logger/logger.h>               // logger + progress_bar
- *   #include <mist/logger/progress_bar.h>         // progress_bar only
+ *   #include <mist/logger/logger.h>               // logger + ProgressBar
+ *   #include <mist/logger/progress_bar.h>         // ProgressBar only
  *   #include <mist/ring_finding/hough_transform.h> // Hough ring-finder
  *   #include <mist/rnd.h>                         // RNG only
  *
  * Cascade structure:
  *
  *   mist.h
- *   ├── rnd.h
+ *   ├── Rnd.h
  *   └── logger/logger.h
- *       ├── logger/logger_types.h   (colour_tag, style_tag, level_tag, ansi())
- *       └── logger/progress_bar.h
- *   └── ring_finding/hough_transform.h
+ *       ├── logger/logger_types.h   (ColourTag, StyleTag, LevelTag, ansi())
+ *       └── logger/ProgressBar.h
+ *   └── ring_finding/HoughTransform.h
  */
 
 //  --- Random utility

@@ -90,16 +90,26 @@ install(FILES
 
 option(MIST_BUILD_TESTS "Build mist test executables" OFF)
 
+# enable_testing() must be called unconditionally so that `ctest` works even
+# when the option is set from the command line without re-running cmake.
+enable_testing()
+
 if(MIST_BUILD_TESTS)
     # Place all test binaries in <build>/bin/ for easy discovery.
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-    add_executable(test_logger test/tester_logger.cxx)
+    # Helper macro: build a test_<name> executable from test/tester_<name>.cxx
+    # and register it with CTest.  Avoids per-test boilerplate.
+    function(mist_add_test name)
+        add_executable(test_${name} test/tester_${name}.cxx)
+        target_link_libraries(test_${name} PRIVATE mist::mist)
+        target_compile_features(test_${name} PRIVATE cxx_std_17)
+        add_test(NAME test_${name} COMMAND test_${name})
+    endfunction()
 
-    target_link_libraries(test_logger PRIVATE mist::mist)
-
-    # Inherit the same C++17 requirement as the library.
-    target_compile_features(test_logger PRIVATE cxx_std_17)
+    mist_add_test(logger)
+    mist_add_test(rnd)
+    mist_add_test(hough)
 
     message(STATUS "[mist] Tests enabled — binaries will land in ${CMAKE_BINARY_DIR}/bin")
 endif()

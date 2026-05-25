@@ -7,28 +7,36 @@
 #include <string>
 #include <vector>
 
+/**
+ * @file MultiProgressBar.h
+ * @brief @ref mist::logger::MultiProgressBar — composite progress widget
+ *        with one main header bar plus N labelled subtask lines.  Used for
+ *        workloads with a top-level cycle (spills, events, batches) and a
+ *        fixed set of parallel sub-tasks per cycle (loader, parser, writer…).
+ */
+
 namespace mist::logger
 {
-    class multi_progress_bar;
+    class MultiProgressBar;
 
     // =========================================================================
-    // subtask_progress_bar
+    // SubtaskProgressBar
     // =========================================================================
 
     /**
-     * @brief One sub-line of a @ref multi_progress_bar, identified by a tag.
+     * @brief One sub-line of a @ref MultiProgressBar, identified by a tag.
      *
-     * Instances are owned by the parent @ref multi_progress_bar and obtained
-     * via @ref multi_progress_bar::add_subtask.  Updating a subtask drives a
+     * Instances are owned by the parent @ref MultiProgressBar and obtained
+     * via @ref MultiProgressBar::add_subtask.  Updating a subtask drives a
      * coordinated redraw through the parent so all subtask lines stay
      * properly aligned in the anchored band.
      *
      * @note Lifetime is tied to the parent.  Subtask references must not
-     *       outlive the @ref multi_progress_bar that produced them.
+     *       outlive the @ref MultiProgressBar that produced them.
      * @note Non-copyable, non-movable for the same reason — addresses are
      *       handed out to callers and stored in the registry.
      */
-    class subtask_progress_bar
+    class SubtaskProgressBar
     {
     public:
         /**
@@ -83,22 +91,26 @@ namespace mist::logger
          */
         void restart(bool flush = true);
 
-        /// @brief Returns @c true between the first @ref update and @ref finish.
+        /// @brief Returns @c true while the subtask has not yet called @ref finish.
+        ///
+        /// Unlike @ref ProgressBar::is_active, this is @c true from construction
+        /// (not from the first @ref update) because a subtask line is shown as
+        /// "pending" even before any progress has been reported.
         [[nodiscard]] bool is_active() const { return active_; }
 
-        /// @brief This subtask's label, as passed to @ref multi_progress_bar::add_subtask.
+        /// @brief This subtask's label, as passed to @ref MultiProgressBar::add_subtask.
         [[nodiscard]] const std::string &tag() const { return tag_; }
 
     private:
-        friend class multi_progress_bar;
+        friend class MultiProgressBar;
 
-        subtask_progress_bar(std::string tag, multi_progress_bar &parent)
+        SubtaskProgressBar(std::string tag, MultiProgressBar &parent)
             : tag_(std::move(tag)), parent_(parent) {}
 
-        subtask_progress_bar(const subtask_progress_bar &) = delete;
-        subtask_progress_bar &operator=(const subtask_progress_bar &) = delete;
-        subtask_progress_bar(subtask_progress_bar &&) = delete;
-        subtask_progress_bar &operator=(subtask_progress_bar &&) = delete;
+        SubtaskProgressBar(const SubtaskProgressBar &) = delete;
+        SubtaskProgressBar &operator=(const SubtaskProgressBar &) = delete;
+        SubtaskProgressBar(SubtaskProgressBar &&) = delete;
+        SubtaskProgressBar &operator=(SubtaskProgressBar &&) = delete;
 
         void _update_impl(float fraction,
                           std::optional<int64_t> current,
@@ -106,7 +118,7 @@ namespace mist::logger
                           bool flush);
 
         std::string tag_;
-        multi_progress_bar &parent_;
+        MultiProgressBar &parent_;
 
         float fraction_ = 0.0f;
         int64_t current_ = 0;
@@ -128,7 +140,7 @@ namespace mist::logger
     };
 
     // =========================================================================
-    // multi_progress_bar
+    // MultiProgressBar
     // =========================================================================
 
     /**
@@ -137,27 +149,27 @@ namespace mist::logger
      * Renders a header bar (overall progress) followed by a labelled sub-line
      * for each subtask added via @ref add_subtask.  The whole block lives in
      * the anchored region at the bottom of the terminal and survives log
-     * output via the @ref anchor_object machinery.
+     * output via the @ref AnchorObject machinery.
      *
      * @note Non-copyable, non-movable — subtasks hold a reference back to
      *       their parent, so the parent must have a stable address.
      */
-    class multi_progress_bar : public anchor_object
+    class MultiProgressBar : public AnchorObject
     {
     public:
         /**
          * @brief Construct an empty multi-bar with no subtasks yet.
          * @param style  Visual fill style applied to all internal bars.
          */
-        explicit multi_progress_bar(bar_style style = bar_style::BLOCK);
+        explicit MultiProgressBar(BarStyle style = BarStyle::Block);
 
-        multi_progress_bar(const multi_progress_bar &) = delete;
-        multi_progress_bar &operator=(const multi_progress_bar &) = delete;
-        multi_progress_bar(multi_progress_bar &&) = delete;
-        multi_progress_bar &operator=(multi_progress_bar &&) = delete;
+        MultiProgressBar(const MultiProgressBar &) = delete;
+        MultiProgressBar &operator=(const MultiProgressBar &) = delete;
+        MultiProgressBar(MultiProgressBar &&) = delete;
+        MultiProgressBar &operator=(MultiProgressBar &&) = delete;
 
         /// @brief Destructor — deregisters from the anchor registry.
-        ~multi_progress_bar();
+        ~MultiProgressBar();
 
         /**
          * @brief Register a new subtask line and return a reference to it.
@@ -168,9 +180,9 @@ namespace mist::logger
          *
          * @param tag  Label shown at the start of the subtask line.
          * @return     Reference to the new subtask handle (stable for the
-         *             lifetime of this @ref multi_progress_bar).
+         *             lifetime of this @ref MultiProgressBar).
          */
-        subtask_progress_bar &add_subtask(std::string tag);
+        SubtaskProgressBar &add_subtask(std::string tag);
 
         /**
          * @brief Drive the main bar with an integral (current / total) pair.
@@ -202,7 +214,7 @@ namespace mist::logger
                                                 0.0f, 1.0f);
             _set_main_progress(frac,
                                static_cast<int64_t>(current),
-                               unknown_total ? int64_t{-1} : static_cast<int64_t>(total),
+                               unknown_total ? kUnknownTotal : static_cast<int64_t>(total),
                                flush);
         }
 
@@ -234,7 +246,7 @@ namespace mist::logger
          * Used by drivers that reuse the same multi-bar across logical
          * cycles (e.g. one cycle per spill).  Resets @c main_fraction_,
          * @c main_current_, the start time, and cascades into every
-         * subtask's @ref subtask_progress_bar::restart.
+         * subtask's @ref SubtaskProgressBar::restart.
          *
          * Does NOT touch the subtask list itself — labels and ownership are
          * preserved across the restart.
@@ -265,10 +277,17 @@ namespace mist::logger
          */
         void set_header(std::string tag, std::string_view msg = "", bool flush = true);
 
+        /// @brief Sentinel value for @ref update(T, T) and @ref _set_main_progress
+        ///        indicating that the total is not yet known.
+        ///
+        /// Pass as the @p total argument to enter unknown-total mode (no
+        /// percentage or ETA shown, only current count and elapsed time).
+        static constexpr int64_t kUnknownTotal = -1;
+
         /// @brief Returns @c true between the first update and @ref finish.
         [[nodiscard]] bool is_active() const { return active_; }
 
-        // anchor_object interface
+        // AnchorObject interface
 
         /**
          * @brief Number of terminal lines the multi-bar occupies right now
@@ -288,19 +307,19 @@ namespace mist::logger
         void render_line() const override;
 
     private:
-        friend class subtask_progress_bar;
+        friend class SubtaskProgressBar;
 
         using clock_t = std::chrono::steady_clock;
         using time_point = std::chrono::time_point<clock_t>;
 
         /**
-         * @brief Subtask-update callback invoked by @ref subtask_progress_bar.
+         * @brief Subtask-update callback invoked by @ref SubtaskProgressBar.
          *
          * Re-renders the multi-bar to reflect the subtask change.  Briefly
          * releases @p lk around the anchor calls to preserve the global lock
          * order registry → bar; see "Subtask callback notes" in the .cxx file.
          */
-        void _subtask_updated_locked(const subtask_progress_bar *who,
+        void _subtask_updated_locked(const SubtaskProgressBar *who,
                                      std::unique_lock<std::mutex> &lk, bool flush);
 
         /**
@@ -309,7 +328,7 @@ namespace mist::logger
          * Increments @c finished_count_, sets @c who->active_ = false, then
          * re-renders.  Same lock-release pattern as @ref _subtask_updated_locked.
          */
-        void _subtask_finished_locked(subtask_progress_bar *who,
+        void _subtask_finished_locked(SubtaskProgressBar *who,
                                       std::unique_lock<std::mutex> &lk, bool flush);
 
         /// @brief Update the main-bar fraction under lock and trigger a redraw.
@@ -341,7 +360,7 @@ namespace mist::logger
         void _render_main(std::string &out) const;
 
         /// @brief Append one rendered subtask line for @p s to @p out.
-        void _render_subtask(std::string &out, const subtask_progress_bar &s) const;
+        void _render_subtask(std::string &out, const SubtaskProgressBar &s) const;
 
         /// @brief Append @p line followed by a terminal-clear escape to @p out.
         static void _emit_line(std::string &out, const std::string &line, int term_width);
@@ -354,7 +373,7 @@ namespace mist::logger
 
         mutable std::mutex mutex_; ///< Guards every per-instance member below.
 
-        bar_style   style_;       ///< Visual fill style applied to every line.
+        BarStyle   style_;       ///< Visual fill style applied to every line.
         bool        active_ = false; ///< True between first update and @ref finish.
         time_point  start_;       ///< Set when the multi-bar transitions to active.
 
@@ -365,12 +384,12 @@ namespace mist::logger
 
         float main_fraction_ = 0.0f; ///< Last main-bar fraction (header line).
         int64_t main_current_ = 0;   ///< Current main counter (e.g. processed spills).
-        int64_t main_total_ = -1;    ///< Total main counter; <0 means unknown.
+        int64_t main_total_ = kUnknownTotal; ///< Total main counter; <0 means unknown.
         std::string main_unit_ = "tasks"; ///< Label shown next to main counter.
-        int finished_count_ = 0;     ///< Subtasks that have called @ref subtask_progress_bar::finish.
+        int finished_count_ = 0;     ///< Subtasks that have called @ref SubtaskProgressBar::finish.
         int total_subtasks_ = 0;     ///< Number of subtasks ever registered.
 
-        std::vector<std::unique_ptr<subtask_progress_bar>> subtasks_; ///< Owned subtask handles.
+        std::vector<std::unique_ptr<SubtaskProgressBar>> subtasks_; ///< Owned subtask handles.
 
         int last_line_count_ = 0;    ///< Number of terminal lines the multi-bar took on the last draw.
         int tag_col_width_ = -1;     ///< Cached width of the tag column; -1 = needs recompute.

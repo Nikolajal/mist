@@ -4,7 +4,7 @@
  *        the global anchored-object registry.
  *
  * The registry, the level filter, and the named-update map are all guarded by
- * a single recursive mutex (returned by @ref anchor_object::registry_lock).
+ * a single recursive mutex (returned by @ref AnchorObject::registry_lock).
  * Lock order across the codebase is registry → bar (i.e. @ref render_line
  * overrides may acquire their own internal mutex while the registry mutex is
  * held by the caller of @ref redraw_all).
@@ -28,14 +28,14 @@ namespace mist::logger
         std::unique_lock<std::recursive_mutex> lk_;
 
         log_print_guard()
-            : lk_(anchor_object::registry_lock())
+            : lk_(AnchorObject::registry_lock())
         {
-            anchor_object::erase_all();
+            AnchorObject::erase_all();
         }
 
         ~log_print_guard()
         {
-            anchor_object::redraw_all();
+            AnchorObject::redraw_all();
             // Lock released as lk_ destructs.
         }
 
@@ -43,49 +43,49 @@ namespace mist::logger
         log_print_guard &operator=(const log_print_guard &) = delete;
     };
     // =========================================================================
-    // anchor_object registry
+    // AnchorObject registry
     // =========================================================================
 
-    std::vector<anchor_object *> &anchor_object::_registry()
+    std::vector<AnchorObject *> &AnchorObject::_registry()
     {
-        static std::vector<anchor_object *> reg;
+        static std::vector<AnchorObject *> reg;
         return reg;
     }
 
-    std::recursive_mutex &anchor_object::_registry_mutex()
+    std::recursive_mutex &AnchorObject::_registry_mutex()
     {
         static std::recursive_mutex m;
         return m;
     }
 
-    std::unique_lock<std::recursive_mutex> anchor_object::registry_lock()
+    std::unique_lock<std::recursive_mutex> AnchorObject::registry_lock()
     {
         return std::unique_lock<std::recursive_mutex>(_registry_mutex());
     }
 
-    anchor_object::anchor_object()
+    AnchorObject::AnchorObject()
     {
         auto lk = registry_lock();
         _registry().push_back(this);
     }
 
-    anchor_object::~anchor_object()
+    AnchorObject::~AnchorObject()
     {
         auto lk = registry_lock();
         auto &reg = _registry();
         reg.erase(std::remove(reg.begin(), reg.end(), this), reg.end());
     }
 
-    int anchor_object::total_anchored_lines()
+    int AnchorObject::total_anchored_lines()
     {
         auto lk = registry_lock();
         int total = 0;
-        for (const anchor_object *obj : _registry())
+        for (const AnchorObject *obj : _registry())
             total += obj->rendered_line_count();
         return total;
     }
 
-    void anchor_object::erase_all()
+    void AnchorObject::erase_all()
     {
         auto lk = registry_lock();
         // Cursor-control escapes only make sense on a TTY.  When redirected to
@@ -104,7 +104,7 @@ namespace mist::logger
             std::cout << "\033[1A\r\033[2K"; // up one line, go to col 0, erase
     }
 
-    void anchor_object::redraw_all()
+    void AnchorObject::redraw_all()
     {
         auto lk = registry_lock();
         // On a non-TTY destination the anchored band is not maintained — each
@@ -115,7 +115,7 @@ namespace mist::logger
         // Cursor is at the start of the line where anchors should begin.
         // Ask each anchor to reprint itself (with a trailing '\n' so the
         // next anchor starts on a fresh line).
-        for (anchor_object *obj : _registry())
+        for (AnchorObject *obj : _registry())
             obj->render_line();
     }
 
@@ -123,7 +123,7 @@ namespace mist::logger
     // update_anchor — concrete anchor for a single named update line
     // =========================================================================
 
-    class update_anchor : public anchor_object
+    class update_anchor : public AnchorObject
     {
     public:
         explicit update_anchor(std::string name) : name_(std::move(name)) {}
@@ -137,9 +137,9 @@ namespace mist::logger
         {
             rendered_ = true;
             std::cout << "\r\033[2K"
-                      << ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD, style_tag::UNDERLINE})
+                      << ansi(ColourTag::BrightGreen, {StyleTag::Bold, StyleTag::Underline})
                       << "[" << name_ << "]"
-                      << ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE})
+                      << ansi(ColourTag::BrightGreen, {StyleTag::None})
                       << " " << last_msg_ << ansi()
                       << '\n';
         }
@@ -186,22 +186,22 @@ namespace mist::logger
 
     namespace
     {
-        std::atomic<level_tag> g_min_level{level_tag::DEBUG};
+        std::atomic<LevelTag> g_min_level{LevelTag::Debug};
     }
 
-    void set_min_level(level_tag level)
+    void set_min_level(LevelTag level)
     {
         g_min_level.store(level, std::memory_order_relaxed);
     }
 
-    level_tag get_min_level()
+    LevelTag get_min_level()
     {
         return g_min_level.load(std::memory_order_relaxed);
     }
 
-    bool check_level(level_tag tag)
+    bool check_level(LevelTag tag)
     {
-        if (tag == level_tag::PLAIN)
+        if (tag == LevelTag::Plain)
             return true;
         return static_cast<int>(tag) <=
                static_cast<int>(g_min_level.load(std::memory_order_relaxed));
@@ -211,32 +211,32 @@ namespace mist::logger
     // log
     // =========================================================================
 
-    void log(level_tag tag, std::string_view msg, bool flush)
+    void log(LevelTag tag, std::string_view msg, bool flush)
     {
         if (!check_level(tag))
             return;
 
-        const bool use_cerr = (tag == level_tag::ERROR || tag == level_tag::WARNING);
+        const bool use_cerr = (tag == LevelTag::Error || tag == LevelTag::Warning);
         std::ostream &out = use_cerr ? std::cerr : std::cout;
 
         std::string styled_msg;
         switch (tag)
         {
-        case level_tag::ERROR:
-            styled_msg = ansi(colour_tag::RED, {style_tag::BOLD, style_tag::UNDERLINE}) + "[ERROR]" + ansi(colour_tag::RED, {style_tag::NONE}) + "   " + std::string(msg) + ansi();
+        case LevelTag::Error:
+            styled_msg = ansi(ColourTag::Red, {StyleTag::Bold, StyleTag::Underline}) + "[ERROR]" + ansi(ColourTag::Red, {StyleTag::None}) + "   " + std::string(msg) + ansi();
             break;
-        case level_tag::WARNING:
-            styled_msg = ansi(colour_tag::YELLOW, {style_tag::BOLD, style_tag::UNDERLINE}) + "[WARNING]" + ansi(colour_tag::YELLOW, {style_tag::NONE}) + " " + std::string(msg) + ansi();
+        case LevelTag::Warning:
+            styled_msg = ansi(ColourTag::Yellow, {StyleTag::Bold, StyleTag::Underline}) + "[WARNING]" + ansi(ColourTag::Yellow, {StyleTag::None}) + " " + std::string(msg) + ansi();
             break;
-        case level_tag::INFO:
-            styled_msg = ansi(colour_tag::BRIGHT_BLUE, {style_tag::BOLD, style_tag::UNDERLINE}) + "[INFO]" + ansi(colour_tag::BRIGHT_BLUE, {style_tag::NONE}) + "    " + std::string(msg) + ansi();
+        case LevelTag::Info:
+            styled_msg = ansi(ColourTag::BrightBlue, {StyleTag::Bold, StyleTag::Underline}) + "[INFO]" + ansi(ColourTag::BrightBlue, {StyleTag::None}) + "    " + std::string(msg) + ansi();
             break;
-        case level_tag::DEBUG:
-            styled_msg = ansi(colour_tag::CYAN, {style_tag::BOLD, style_tag::UNDERLINE}) + "[DEBUG]" + ansi(colour_tag::CYAN, {style_tag::NONE}) + "   " + std::string(msg) + ansi();
+        case LevelTag::Debug:
+            styled_msg = ansi(ColourTag::Cyan, {StyleTag::Bold, StyleTag::Underline}) + "[DEBUG]" + ansi(ColourTag::Cyan, {StyleTag::None}) + "   " + std::string(msg) + ansi();
             break;
-        case level_tag::PLAIN:
+        case LevelTag::Plain:
         default:
-            styled_msg = ansi(colour_tag::WHITE, {style_tag::NONE}) + std::string(msg) + ansi();
+            styled_msg = ansi(ColourTag::White, {StyleTag::None}) + std::string(msg) + ansi();
             break;
         }
 
@@ -248,7 +248,7 @@ namespace mist::logger
         }
     }
 
-    void log(std::string_view msg, colour_tag c, std::initializer_list<style_tag> s)
+    void log(std::string_view msg, ColourTag c, std::initializer_list<StyleTag> s)
     {
         log_print_guard guard;
         std::cout << ansi(c, s) << msg << ansi() << '\n';
@@ -260,7 +260,7 @@ namespace mist::logger
 
     void update(std::string update_name, std::string_view msg, bool flush)
     {
-        auto lk = anchor_object::registry_lock();
+        auto lk = AnchorObject::registry_lock();
         auto &anchors = _update_anchors();
 
         // try_emplace creates a default-constructed update_anchor_state if the
@@ -277,7 +277,7 @@ namespace mist::logger
             // log_print_guard can re-acquire it (recursive mutex — safe either
             // way, but we keep the order explicit and minimise nesting).
             lk.unlock();
-            log(level_tag::WARNING,
+            log(LevelTag::Warning,
                 "update(\"" + update_name + "\") called after end_update() — recreating anchor.");
             lk.lock();
         }
@@ -289,8 +289,8 @@ namespace mist::logger
 
         // Erase all anchor lines, redraw them all (this anchor now has the
         // updated message stored, so redraw_all() will print the new text).
-        anchor_object::erase_all();
-        anchor_object::redraw_all();
+        AnchorObject::erase_all();
+        AnchorObject::redraw_all();
 
         if (flush)
             std::cout << std::flush;
@@ -298,7 +298,7 @@ namespace mist::logger
 
     void end_update(std::string update_name, bool flush)
     {
-        auto lk = anchor_object::registry_lock();
+        auto lk = AnchorObject::registry_lock();
         auto &anchors = _update_anchors();
         auto it = anchors.find(update_name);
         if (it == anchors.end() || !it->second.live.has_value())
@@ -311,17 +311,17 @@ namespace mist::logger
         // deregisters it from the global anchor list).  We KEEP the state entry
         // in the map with ended_recently=true so a future update() with the
         // same name can warn.
-        anchor_object::erase_all();
+        AnchorObject::erase_all();
         it->second.live.reset();
         it->second.ended_recently = true;
 
         // Commit the final state of this update as a permanent scrolling line,
         // then redraw any remaining anchors below it.
-        std::cout << ansi(colour_tag::BRIGHT_GREEN, {style_tag::BOLD, style_tag::UNDERLINE})
+        std::cout << ansi(ColourTag::BrightGreen, {StyleTag::Bold, StyleTag::Underline})
                   << "[" << update_name << "]"
-                  << ansi(colour_tag::BRIGHT_GREEN, {style_tag::NONE})
+                  << ansi(ColourTag::BrightGreen, {StyleTag::None})
                   << " " << last_msg << ansi() << '\n';
-        anchor_object::redraw_all(); // redraws everything except the removed anchor
+        AnchorObject::redraw_all(); // redraws everything except the removed anchor
 
         if (flush)
             std::cout << std::flush;
