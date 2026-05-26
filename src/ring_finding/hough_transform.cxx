@@ -15,9 +15,10 @@ namespace mist::ring_finding
     // ============================================================
 
     HoughTransform::HoughTransform(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
-                                     float r_min, float r_max, float r_step, float cell_size)
+                                     float r_min, float r_max, float r_step, float cell_size,
+                                     float centre_padding_mm)
     {
-        build_lut(index_to_hit_xy, r_min, r_max, r_step, cell_size);
+        build_lut(index_to_hit_xy, r_min, r_max, r_step, cell_size, centre_padding_mm);
     }
 
     // ============================================================
@@ -25,7 +26,8 @@ namespace mist::ring_finding
     // ============================================================
 
     void HoughTransform::build_lut(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
-                                    float r_min, float r_max, float r_step, float cell_size)
+                                    float r_min, float r_max, float r_step, float cell_size,
+                                    float centre_padding_mm)
     {
         cell_size_ = cell_size;
 
@@ -40,11 +42,20 @@ namespace mist::ring_finding
             y_max_ = std::max(y_max_, pos[1]);
         }
 
-        // Pad by r_max so ring centres outside the Hit area are reachable
-        x_min_ -= r_max;
-        x_max_ += r_max;
-        y_min_ -= r_max;
-        y_max_ += r_max;
+        // Pad by `centre_padding_mm` so ring centres outside the hit area
+        // remain reachable.  Default (negative sentinel) falls back to
+        // r_max, which is the largest possible offset between a hit and
+        // its ring centre — guarantees no real centre is excluded but
+        // bloats the accumulator unnecessarily for detectors where ring
+        // centres are physically constrained near the detector plane
+        // (e.g. fixed-radiator Cherenkov).  Picking a tighter pad shrinks
+        // n_cells = nx_ * ny_ * n_R quadratically (in 1/pad for large
+        // pad) and speeds up voting + peak finding proportionally.
+        const float pad = (centre_padding_mm < 0.f) ? r_max : centre_padding_mm;
+        x_min_ -= pad;
+        x_max_ += pad;
+        y_min_ -= pad;
+        y_max_ += pad;
         nx_ = static_cast<int>((x_max_ - x_min_) / cell_size) + 1;
         ny_ = static_cast<int>((y_max_ - y_min_) / cell_size) + 1;
 

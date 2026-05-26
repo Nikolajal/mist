@@ -141,14 +141,25 @@ namespace mist::ring_finding
         /**
          * @brief Convenience constructor that immediately builds the LUT.
          *
-         * @param index_to_hit_xy  Map from LUT key to (x, y) [mm].
-         * @param r_min            Minimum ring radius [mm].
-         * @param r_max            Maximum ring radius [mm].
-         * @param r_step           Radial bin step [mm].
-         * @param cell_size        Accumulator cell size in (x, y) [mm].
+         * @param index_to_hit_xy   Map from LUT key to (x, y) [mm].
+         * @param r_min             Minimum ring radius [mm].
+         * @param r_max             Maximum ring radius [mm].
+         * @param r_step            Radial bin step [mm].
+         * @param cell_size         Accumulator cell size in (x, y) [mm].
+         * @param centre_padding_mm Half-width of extra (x, y) padding added
+         *                          around the hit bounding box so that ring
+         *                          centres outside the hit area remain
+         *                          reachable.  Negative (default) → use
+         *                          @p r_max, the safest setting (no real
+         *                          centre can be excluded).  Smaller values
+         *                          shrink the accumulator and speed up
+         *                          voting / peak finding proportionally;
+         *                          pick a value comfortably larger than the
+         *                          expected centre spread for your detector.
          */
         HoughTransform(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
-                        float r_min, float r_max, float r_step, float cell_size);
+                        float r_min, float r_max, float r_step, float cell_size,
+                        float centre_padding_mm = -1.f);
 
         // ================================================================
         /** @name LUT Construction */
@@ -162,14 +173,23 @@ namespace mist::ring_finding
          * stores their flat indices. Duplicate cells within each R bin are
          * removed.
          *
-         * @param index_to_hit_xy  Map from LUT key to Hit position [mm].
-         * @param r_min            Minimum ring radius [mm].
-         * @param r_max            Maximum ring radius [mm].
-         * @param r_step           Step between candidate radii [mm].
-         * @param cell_size        Linear size of each accumulator cell [mm].
+         * @param index_to_hit_xy   Map from LUT key to Hit position [mm].
+         * @param r_min             Minimum ring radius [mm].
+         * @param r_max             Maximum ring radius [mm].
+         * @param r_step            Step between candidate radii [mm].
+         * @param cell_size         Linear size of each accumulator cell [mm].
+         * @param centre_padding_mm Half-width of extra (x, y) padding added
+         *                          around the hit bounding box.  Negative
+         *                          (default) → use @p r_max (the safest
+         *                          setting, covers every reachable centre).
+         *                          Smaller values shrink @c n_cells and
+         *                          speed up voting + peak finding
+         *                          proportionally.  Pick comfortably larger
+         *                          than the expected centre spread.
          */
         void build_lut(const std::map<int, std::array<float, 2>> &index_to_hit_xy,
-                       float r_min, float r_max, float r_step, float cell_size);
+                       float r_min, float r_max, float r_step, float cell_size,
+                       float centre_padding_mm = -1.f);
 
         /// Return whether the LUT has been built and is ready for use.
         [[nodiscard]] bool is_lut_ready() const
