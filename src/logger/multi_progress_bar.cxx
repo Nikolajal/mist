@@ -182,6 +182,13 @@ namespace mist::logger
                 std::lock_guard<std::mutex> lk(mutex_);
                 _draw_locked();          // commit final frame as permanent scrolling output
             }
+            //  Zero last_line_count_ AFTER _draw_locked() — _draw_locked sets
+            //  it to 1+1+n, but those lines are now permanent scrolling output,
+            //  not anchor content.  Without this, the next erase_all() call
+            //  (from any subsequent logger print) sees last_line_count_ > 0
+            //  and walks the cursor up into the committed output (active
+            //  mismatch: active_=false but last_line_count_!=0).
+            last_line_count_ = 0;
         }
         if (flush) std::cout << std::flush;
     }
@@ -367,8 +374,11 @@ namespace mist::logger
             main_unit_ = std::move(unit);
             suffix_width_ = -1; // force recompute on next render
         }
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
     }
 
@@ -397,8 +407,11 @@ namespace mist::logger
                 s->start_set_ = true;
             }
         }
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
     }
 
