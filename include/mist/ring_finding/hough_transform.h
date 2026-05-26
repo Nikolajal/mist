@@ -272,6 +272,12 @@ namespace mist::ring_finding
         std::vector<float> r_bins_; ///< Candidate radii sampled during voting [mm].
         std::vector<int> accum_;    ///< Flat accumulator `accum_[iR*nx*ny + iy*nx + ix]`.
 
+        /// Scratch buffer for the 3-D Summed-Area-Table used by @ref find_peak
+        /// when `window > 1`.  Pre-allocated in @ref build_lut to the same size
+        /// as @c accum_; marked `mutable` so that @ref find_peak (which is
+        /// logically `const`) can fill it without a per-call heap allocation.
+        mutable std::vector<int> sat_;
+
         /// `lut_[lut_key][r_bin_index]` → vector of flat cell indices
         /// that this key votes for at that radius bin.
         std::unordered_map<int, std::vector<std::vector<int>>> lut_;
@@ -298,10 +304,18 @@ namespace mist::ring_finding
          *
          * For @p window `== 1`, this is exactly the single-cell global max
          * (same result as the legacy peak finder).  For @p window `> 1`,
-         * the function evaluates the sum over a sliding window at every
-         * anchor position and reports the position with the maximum.
+         * the function builds a 3-D Summed-Area-Table (SAT / integral image)
+         * from @c accum_ in O(n_cells) time (three sequential 1-D prefix-sum
+         * passes), then evaluates each window sum in O(1) via inclusion-
+         * exclusion on the 8 corners of the 3-D box.  Total cost is
+         * O(n_cells × 8), versus O(n_cells × W³) for a naive scan.
+         * Results are bit-for-bit identical to the naive approach.
+         *
          * Anchors near the upper bounds where the window would overrun are
-         * skipped (no wrap-around).
+         * skipped (no wrap-around, no zero-padding past the edge).
+         *
+         * The SAT scratch buffer (@c sat_) is pre-allocated in @ref build_lut
+         * so this function performs no heap allocation.
          *
          * @param window        Edge length of the window in accumulator cells.
          * @param[out] best_iR  Radial bin index of the window's lower-iR

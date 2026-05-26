@@ -101,6 +101,7 @@ namespace mist::ring_finding
         }
 
         accum_.assign(r_bins_.size() * nx_ * ny_, 0);
+        sat_.assign(accum_.size(), 0); // pre-size SAT scratch buffer (no per-call alloc)
 
         // std::to_string replaces ROOT's Form() for portable string formatting.
         mist::logger::info(
@@ -176,43 +177,108 @@ namespace mist::ring_finding
             return best_count;
         }
 
-        // Sliding-window scan over (iR, iy, ix) anchors.  At each anchor
-        // we sum `window` cells along each axis.  Anchors near the upper
-        // bound where the window would overrun are skipped — no wrap-
-        // around, and no zero-padding past the array edge (that would
-        // bias the peak toward the edges, since boundary windows would
-        // include phantom zeros).
+        // Summed-Area-Table (3-D integral image) peak finder.
         //
-        // Complexity: O(n_cells × window^3).  For window=2 that's 8×
-        // the single-cell scan, still trivial at the scales we run.  A
-        // summed-area-table would bring it to O(n_cells); not worth the
-        // bookkeeping until window^3 dominates the profile.
+        // Replaces the naive O(n_cells × W³) sliding scan with:
+        //   • O(n_cells) SAT build  — 3 sequential 1-D prefix-sum passes
+        //   • O(n_cells × 8) scan   — 8 corner reads per anchor position
+        //
+        // For W=2 on the 1.5 mm grid (the standard aggregation recipe) this
+        // brings peak-finding cost from ~64× legacy back to ~8× legacy,
+        // matching the voting step.  Results are bit-for-bit identical to
+        // the naive sliding scan.
+        //
+        // SAT layout (same flat indexing as accum_):
+        //   sat_[iR * n_cells + iy * nx_ + ix]
+        //     = sum of accum_[dR * n_cells + dy * nx_ + dx]
+        //       for all dR ≤ iR, dy ≤ iy, dx ≤ ix
+        //
+        // Build via three sequential 1-D cumulative-sum passes:
+        //   pass 1 (x) : for each (iR, iy), scan ix  1 → nx_-1
+        //   pass 2 (y) : for each (iR, ix), scan iy  1 → ny_-1
+        //   pass 3 (R) : for each (iy, ix), scan iR  1 → n_r-1
+        //
+        // sat_ is a pre-allocated member (sized in build_lut) so this
+        // copy-then-scan incurs no heap allocation.
+        sat_ = accum_;
+
+        // Pass 1 — prefix-sum along x
+        for (int iR = 0; iR < n_r; ++iR)
+            for (int iy = 0; iy < ny_; ++iy)
+            {
+                int *row = &sat_[iR * n_cells + iy * nx_];
+                for (int ix = 1; ix < nx_; ++ix)
+                    row[ix] += row[ix - 1];
+            }
+
+        // Pass 2 — prefix-sum along y
+        for (int iR = 0; iR < n_r; ++iR)
+            for (int iy = 1; iy < ny_; ++iy)
+            {
+                const int *prev = &sat_[iR * n_cells + (iy - 1) * nx_];
+                int       *cur  = &sat_[iR * n_cells +  iy      * nx_];
+                for (int ix = 0; ix < nx_; ++ix)
+                    cur[ix] += prev[ix];
+            }
+
+        // Pass 3 — prefix-sum along R
+        for (int iR = 1; iR < n_r; ++iR)
+        {
+            const int *prev = &sat_[(iR - 1) * n_cells];
+            int       *cur  = &sat_[ iR      * n_cells];
+            for (int k = 0; k < n_cells; ++k)
+                cur[k] += prev[k];
+        }
+
+        // SAT read helper — lower-bound out-of-range (negative index) → 0.
+        // Upper bounds are guaranteed in-range by the anchor loop below.
+        auto sat_val = [&](int iR, int iy, int ix) -> int
+        {
+            if (iR < 0 || iy < 0 || ix < 0) return 0;
+            return sat_[iR * n_cells + iy * nx_ + ix];
+        };
+
+        // Scan every valid anchor (lower corner of the W×W×W window).
+        // Windows that would overrun the array edge are excluded — no
+        // wrap-around, no zero-padding past the boundary.
         const int max_iR = n_r - window;
         const int max_iy = ny_ - window;
         const int max_ix = nx_ - window;
+
         for (int iR = 0; iR <= max_iR; ++iR)
+        {
+            const int iR1 = iR + window - 1;
             for (int iy = 0; iy <= max_iy; ++iy)
+            {
+                const int iy1 = iy + window - 1;
                 for (int ix = 0; ix <= max_ix; ++ix)
                 {
-                    int sum = 0;
-                    for (int dR = 0; dR < window; ++dR)
-                    {
-                        const int *plane = &accum_[(iR + dR) * n_cells];
-                        for (int dy = 0; dy < window; ++dy)
-                        {
-                            const int *row = plane + (iy + dy) * nx_;
-                            for (int dx = 0; dx < window; ++dx)
-                                sum += row[ix + dx];
-                        }
-                    }
+                    const int ix1 = ix + window - 1;
+                    // 3-D inclusion-exclusion on the 8 corners of the box
+                    // [iR..iR1] × [iy..iy1] × [ix..ix1].
+                    // Signs follow the Möbius pattern: + for the far corner,
+                    // − for the three faces, + for the three back-edges,
+                    // − for the back corner.
+                    const int sum =
+                          sat_val(iR1,    iy1,    ix1   )
+                        - sat_val(iR - 1, iy1,    ix1   )
+                        - sat_val(iR1,    iy - 1, ix1   )
+                        - sat_val(iR1,    iy1,    ix - 1)
+                        + sat_val(iR - 1, iy - 1, ix1   )
+                        + sat_val(iR - 1, iy1,    ix - 1)
+                        + sat_val(iR1,    iy - 1, ix - 1)
+                        - sat_val(iR - 1, iy - 1, ix - 1);
+
                     if (sum > best_count)
                     {
                         best_count = sum;
-                        best_iR = iR;
-                        best_ix = ix;
-                        best_iy = iy;
+                        best_iR    = iR;
+                        best_ix    = ix;
+                        best_iy    = iy;
                     }
                 }
+            }
+        }
 
         return best_count;
     }

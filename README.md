@@ -373,8 +373,18 @@ needed.  Without halving the grid, `W = 2` covers a `(2·cell_size)`³
 volume which is coarser than the legacy finder; useful only if you
 explicitly want bigger probed cells.
 
-Cost: `O(n_cells × W³)` per peak-finding pass.  Tests pass for
-`W = 1, 2`.  Values >2 are accepted but give diminishing returns.
+**Implementation**: for `W > 1` the peak finder uses a 3-D
+**Summed-Area-Table** (integral image).  A prefix-sum array is built
+from `accum_` in O(n_cells) via three sequential 1-D cumulative-sum
+passes (along x, then y, then R).  Each window sum is then evaluated
+in O(1) via inclusion-exclusion on the 8 corners of the 3-D box.
+Total cost: `O(n_cells × 8)` — constant in W, versus `O(n_cells × W³)`
+for a naive scan.  Results are bit-for-bit identical to the naive
+approach.  The SAT scratch buffer is a pre-allocated `mutable` member,
+so `find_peak` incurs no heap allocation.
+
+Tests pass for `W = 1, 2`.  Values >2 are accepted but give
+diminishing returns.
 
 ---
 
