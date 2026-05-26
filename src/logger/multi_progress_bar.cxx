@@ -124,8 +124,17 @@ namespace mist::logger
             _update_state_locked(
                 static_cast<float>(std::clamp(fraction, 0.0, 1.0)));
         }
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        //  Hold registry lock across erase + redraw so a concurrent
+        //  thread's update() cannot slip its own erase between our
+        //  erase and redraw — the cursor sits at the top of the
+        //  anchor band between them, and a second erase would walk
+        //  into scroll history.  See log_print_guard in logger.cxx
+        //  for the same RAII pattern.
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
     }
 
@@ -138,8 +147,11 @@ namespace mist::logger
             header_msg_  = std::string(msg);
             _update_state_locked(main_fraction_);
         }
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
     }
 
@@ -154,16 +166,22 @@ namespace mist::logger
             // Keep last_line_count_ intact — erase_all() needs it to know
             // how many lines to move up. We clear it after erasing.
         }
-        AnchorObject::erase_all();   // uses last_line_count_ via rendered_line_count()
-        last_line_count_ = 0;         // now safe to zero — erase is done
-        AnchorObject::redraw_all();  // redraws other anchors only (active_=false skips us)
+        //  Hold registry lock across the full erase → reset → redraw →
+        //  commit sequence so a concurrent update() can't slip an erase
+        //  or redraw between these steps and corrupt the cursor band.
         {
-            // Hold mutex_ while calling _draw_locked() so state reads in
-            // _render_main / _render_subtask cannot race with a concurrent
-            // update() that re-activates the bar.  (Contract: _draw_locked
-            // requires the caller to hold mutex_.)
-            std::lock_guard<std::mutex> lk(mutex_);
-            _draw_locked();           // commit final frame as permanent scrolling output
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();   // uses last_line_count_ via rendered_line_count()
+            last_line_count_ = 0;        // now safe to zero — erase is done
+            AnchorObject::redraw_all();  // redraws other anchors only (active_=false skips us)
+            {
+                // Hold mutex_ while calling _draw_locked() so state reads in
+                // _render_main / _render_subtask cannot race with a concurrent
+                // update() that re-activates the bar.  (Contract: _draw_locked
+                // requires the caller to hold mutex_.)
+                std::lock_guard<std::mutex> lk(mutex_);
+                _draw_locked();          // commit final frame as permanent scrolling output
+            }
         }
         if (flush) std::cout << std::flush;
     }
@@ -275,8 +293,11 @@ namespace mist::logger
     {
         _update_state_locked(main_fraction_);
         lk.unlock();  // see "Subtask callback notes" above
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
         lk.lock();
     }
@@ -300,8 +321,11 @@ namespace mist::logger
         ++finished_count_;
         _update_state_locked(main_fraction_);
         lk.unlock();  // see "Subtask callback notes" above
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
         lk.lock();
     }
@@ -311,8 +335,11 @@ namespace mist::logger
         std::unique_lock<std::mutex> lk(mutex_);
         _update_state_locked(frac);
         lk.unlock();
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
     }
 
@@ -325,8 +352,11 @@ namespace mist::logger
             main_total_   = total;
             _update_state_locked(frac);
         }
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush) std::cout << std::flush;
     }
 

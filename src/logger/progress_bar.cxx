@@ -133,9 +133,15 @@ namespace mist::logger
             _update_state(static_cast<float>(std::clamp(fraction, 0.0, 1.0)),
                           std::nullopt, std::nullopt);
         }
-        // Delegate all cursor management to AnchorObject.
-        AnchorObject::erase_all();
-        AnchorObject::redraw_all();
+        // Delegate all cursor management to AnchorObject — hold the
+        // registry lock across BOTH erase and redraw so concurrent
+        // updates from other threads can't interleave between them
+        // (see log_print_guard for the same RAII pattern).
+        {
+            auto reg_lk = AnchorObject::registry_lock();
+            AnchorObject::erase_all();
+            AnchorObject::redraw_all();
+        }
         if (flush)
             std::cout << std::flush;
     }
@@ -152,9 +158,17 @@ namespace mist::logger
             _update_state(1.0f, 1, 1);
         }
 
+        //  Steps 2–5 must be atomic against concurrent update() calls from
+        //  other threads.  Hold the registry lock across the whole
+        //  erase → draw → deactivate → redraw sequence (recursive, so
+        //  re-acquiring it inside erase_all/redraw_all is fine).  Without
+        //  this bracket, a concurrent thread's update() can slip an
+        //  erase between our steps and walk the cursor into scroll history.
+        auto reg_lk = AnchorObject::registry_lock();
+
         // 2. Erase the anchored band — this bar is still active and counts
         //    among the lines to erase. We hold no bar mutex here, only the
-        //    registry mutex inside erase_all.
+        //    registry mutex (now held by us).
         AnchorObject::erase_all();
 
         // 3. Emit the final 100% frame as a permanent scrolling line (B1 fix:

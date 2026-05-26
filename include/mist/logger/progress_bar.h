@@ -102,8 +102,19 @@ namespace mist::logger
                               static_cast<int64_t>(current),
                               static_cast<int64_t>(total));
             }
-            AnchorObject::erase_all();
-            AnchorObject::redraw_all();
+            //  Hold the registry lock across BOTH erase_all and redraw_all so
+            //  concurrent updates from other threads cannot interleave between
+            //  them.  Without this, T2's erase_all can land after T1's erase
+            //  but before T1's redraw — cursor sits at the top of the anchor
+            //  band, T2's cursor-up walks into the scroll history, and the
+            //  bar appears to "stack" new lines instead of update in place.
+            //  registry_lock is recursive → safe to hold while bar's own
+            //  per-instance mutex_ is acquired elsewhere on this thread.
+            {
+                auto reg_lk = AnchorObject::registry_lock();
+                AnchorObject::erase_all();
+                AnchorObject::redraw_all();
+            }
             if (flush)
                 std::cout << std::flush;
         }
