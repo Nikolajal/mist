@@ -111,18 +111,13 @@ namespace mist::ring_finding
     //  Private helpers
     // ============================================================
 
-    int HoughTransform::vote_and_find_peak(const std::vector<Hit> &hits,
-                                            const std::vector<int> &active_indices,
-                                            int &best_iR, int &best_cell)
+    void HoughTransform::vote(const std::vector<Hit> &hits,
+                              const std::vector<int> &active_indices)
     {
         std::fill(accum_.begin(), accum_.end(), 0);
 
         const int n_cells = nx_ * ny_;
         const int n_r = static_cast<int>(r_bins_.size());
-
-        best_iR = -1;
-        best_cell = -1;
-        int best_count = 0;
 
         for (int i : active_indices)
         {
@@ -140,15 +135,84 @@ namespace mist::ring_finding
                     // and drops the clamp, we want a loud failure in debug
                     // builds rather than silent out-of-bounds writes.
                     assert(cell >= 0 && cell < n_cells);
-                    const int val = ++accum_[iR * n_cells + cell];
-                    if (val > best_count)
-                    {
-                        best_count = val;
-                        best_iR = iR;
-                        best_cell = cell;
-                    }
+                    ++accum_[iR * n_cells + cell];
                 }
         }
+    }
+
+    int HoughTransform::find_peak(int window, int &best_iR, int &best_ix, int &best_iy) const
+    {
+        const int n_cells = nx_ * ny_;
+        const int n_r = static_cast<int>(r_bins_.size());
+
+        best_iR = -1;
+        best_ix = -1;
+        best_iy = -1;
+        int best_count = 0;
+
+        // Single-cell scan — exact equivalent of the legacy peak finder.
+        // Kept on its own branch because (a) it's the common case and
+        // benefits from the absence of inner window loops, and (b) the
+        // semantics differ subtly: the single-cell anchor IS the cell,
+        // whereas the windowed anchor is the lower-corner of the window.
+        if (window <= 1)
+        {
+            for (int iR = 0; iR < n_r; ++iR)
+            {
+                const int *plane = &accum_[iR * n_cells];
+                for (int iy = 0; iy < ny_; ++iy)
+                    for (int ix = 0; ix < nx_; ++ix)
+                    {
+                        const int val = plane[iy * nx_ + ix];
+                        if (val > best_count)
+                        {
+                            best_count = val;
+                            best_iR = iR;
+                            best_ix = ix;
+                            best_iy = iy;
+                        }
+                    }
+            }
+            return best_count;
+        }
+
+        // Sliding-window scan over (iR, iy, ix) anchors.  At each anchor
+        // we sum `window` cells along each axis.  Anchors near the upper
+        // bound where the window would overrun are skipped — no wrap-
+        // around, and no zero-padding past the array edge (that would
+        // bias the peak toward the edges, since boundary windows would
+        // include phantom zeros).
+        //
+        // Complexity: O(n_cells × window^3).  For window=2 that's 8×
+        // the single-cell scan, still trivial at the scales we run.  A
+        // summed-area-table would bring it to O(n_cells); not worth the
+        // bookkeeping until window^3 dominates the profile.
+        const int max_iR = n_r - window;
+        const int max_iy = ny_ - window;
+        const int max_ix = nx_ - window;
+        for (int iR = 0; iR <= max_iR; ++iR)
+            for (int iy = 0; iy <= max_iy; ++iy)
+                for (int ix = 0; ix <= max_ix; ++ix)
+                {
+                    int sum = 0;
+                    for (int dR = 0; dR < window; ++dR)
+                    {
+                        const int *plane = &accum_[(iR + dR) * n_cells];
+                        for (int dy = 0; dy < window; ++dy)
+                        {
+                            const int *row = plane + (iy + dy) * nx_;
+                            for (int dx = 0; dx < window; ++dx)
+                                sum += row[ix + dx];
+                        }
+                    }
+                    if (sum > best_count)
+                    {
+                        best_count = sum;
+                        best_iR = iR;
+                        best_ix = ix;
+                        best_iy = iy;
+                    }
+                }
 
         return best_count;
     }
@@ -191,7 +255,8 @@ namespace mist::ring_finding
                                                          int min_hits,
                                                          int min_active,
                                                          int max_rings,
-                                                         float collection_radius)
+                                                         float collection_radius,
+                                                         int aggregation_window_cells)
     {
         std::vector<RingResult> found_rings;
 
@@ -200,6 +265,10 @@ namespace mist::ring_finding
             mist::logger::error("(HoughTransform::find_rings) LUT is empty — call build_lut() first.");
             return found_rings;
         }
+
+        // Normalise the window parameter.  Callers passing 0 or negative
+        // get the legacy single-cell behaviour rather than a hard error.
+        const int window = std::max(1, aggregation_window_cells);
 
         // Build the initial active set: only hits whose LUT key is known
         std::vector<int> active_indices;
@@ -210,23 +279,47 @@ namespace mist::ring_finding
 
         // Threshold is fixed against the initial active count so that the bar
         // is consistent across all passes.
+        //
+        // Note on window>1 semantics: peak_votes now sums `window^3` cells,
+        // each of volume cell_size^3.  When the caller compensates by
+        // halving cell_size / r_step (the intended usage), the physical
+        // volume probed by the peak finder matches the legacy single-cell
+        // volume — so `min_hits` and `threshold_fraction` retain their
+        // physical meaning ("votes in a `(window·cell_size)`³ region").
+        // No automatic rescaling here; the caller is responsible for
+        // matching grid spacing to the chosen window.
         const int threshold = std::max(min_hits,
                                        static_cast<int>(std::ceil(threshold_fraction * active_indices.size())));
+
+        // Half-cell offset for sub-cell-precision back-projection when
+        // window > 1: the reported (cx, cy, R) is the geometric centre
+        // of the winning window, not its lower-corner anchor.  For
+        // window = 1 this reduces to 0, preserving the legacy convention
+        // that best_ix maps to x_min_ + best_ix * cell_size_.
+        const float window_offset_cells = 0.5f * (window - 1);
 
         while (static_cast<int>(found_rings.size()) < max_rings &&
                static_cast<int>(active_indices.size()) >= min_active)
         {
-            int best_iR, best_cell;
-            const int best_count = vote_and_find_peak(hits, active_indices, best_iR, best_cell);
+            vote(hits, active_indices);
+
+            int best_iR, best_ix, best_iy;
+            const int best_count = find_peak(window, best_iR, best_ix, best_iy);
 
             if (best_count < threshold)
                 break;
 
-            const int best_ix = best_cell % nx_;
-            const int best_iy = best_cell / nx_;
-            const float cx = x_min_ + best_ix * cell_size_;
-            const float cy = y_min_ + best_iy * cell_size_;
-            const float R = r_bins_[best_iR];
+            const float cx = x_min_ + (best_ix + window_offset_cells) * cell_size_;
+            const float cy = y_min_ + (best_iy + window_offset_cells) * cell_size_;
+            // For the radius: average the bin centres covered by the
+            // window.  Equivalent to (r_bins_[best_iR] + r_bins_[best_iR
+            // + window - 1]) / 2 when r_bins_ is uniformly spaced (the
+            // build_lut invariant), but written as a generic mean so
+            // future non-uniform R sampling would still work.
+            float R = 0.f;
+            for (int dR = 0; dR < window; ++dR)
+                R += r_bins_[best_iR + dR];
+            R /= static_cast<float>(window);
 
             RingResult ring = collect_ring_hits(hits, active_indices, cx, cy, R, collection_radius);
             ring.peak_votes = best_count;

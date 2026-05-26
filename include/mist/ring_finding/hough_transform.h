@@ -201,6 +201,22 @@ namespace mist::ring_finding
          * @param max_rings           Maximum number of rings to extract (default 2).
          * @param collection_radius   Distance from the ring arc within which a Hit
          *                            is assigned to the ring [mm] (default 6).
+         * @param aggregation_window_cells  Sliding-window size, in accumulator
+         *                            cells, used by the peak finder along each
+         *                            axis @f$(c_x, c_y, R)@f$.  Default `1`
+         *                            preserves the original behaviour
+         *                            (peak = single-cell maximum).  Set to `2`
+         *                            to scan with a 2×2×2 sub-cell sliding
+         *                            window — combined with halved
+         *                            `cell_size` / `r_step` at LUT build time,
+         *                            this recovers votes that would otherwise
+         *                            fragment across adjacent cell boundaries.
+         *                            The reported @c peak_votes is then the
+         *                            **aggregated** count over the winning
+         *                            window; the reported @c (cx, cy, radius)
+         *                            is the window's centre, giving sub-cell
+         *                            precision.  Values >2 are accepted but
+         *                            give diminishing returns; >4 is unusual.
          * @return                    Vector of @ref RingResult.  The result is
          *                            sorted in descending @c peak_votes order
          *                            after extraction, so callers may rely on
@@ -215,7 +231,8 @@ namespace mist::ring_finding
                                             int min_hits,
                                             int min_active,
                                             int max_rings = 2,
-                                            float collection_radius = kDefaultCollectionRadiusMm);
+                                            float collection_radius = kDefaultCollectionRadiusMm,
+                                            int aggregation_window_cells = 1);
 
         ///@}
 
@@ -264,17 +281,36 @@ namespace mist::ring_finding
         // ================================================================
 
         /**
-         * @brief Fill the accumulator and return the index of the global maximum.
+         * @brief Vote @p active_indices into the accumulator.
+         *
+         * Resets @c accum_ and increments the cells indicated by every hit's
+         * LUT entry.  Pure side-effect on @c accum_; no peak finding.
          *
          * @param hits            Full Hit vector.
          * @param active_indices  Indices into @p hits to vote with.
-         * @param[out] best_iR    Radial bin index of the maximum cell.
-         * @param[out] best_cell  Flat (iy * nx + ix) index of the maximum cell.
-         * @return                Vote count of the maximum cell.
          */
-        int vote_and_find_peak(const std::vector<Hit> &hits,
-                               const std::vector<int> &active_indices,
-                               int &best_iR, int &best_cell);
+        void vote(const std::vector<Hit> &hits,
+                  const std::vector<int> &active_indices);
+
+        /**
+         * @brief Scan @c accum_ for the position with the maximum aggregated
+         *        vote count over a `window × window × window` cell window.
+         *
+         * For @p window `== 1`, this is exactly the single-cell global max
+         * (same result as the legacy peak finder).  For @p window `> 1`,
+         * the function evaluates the sum over a sliding window at every
+         * anchor position and reports the position with the maximum.
+         * Anchors near the upper bounds where the window would overrun are
+         * skipped (no wrap-around).
+         *
+         * @param window        Edge length of the window in accumulator cells.
+         * @param[out] best_iR  Radial bin index of the window's lower-iR
+         *                      anchor (or the single cell if `window == 1`).
+         * @param[out] best_ix  X cell index of the window's lower-ix anchor.
+         * @param[out] best_iy  Y cell index of the window's lower-iy anchor.
+         * @return              Aggregated vote count over the winning window.
+         */
+        int find_peak(int window, int &best_iR, int &best_ix, int &best_iy) const;
 
         /**
          * @brief Collect hits within @p collection_radius of a ring arc.

@@ -323,7 +323,10 @@ auto rings = ht.find_rings(hits,
     5,     // min_hits: minimum absolute vote count
     5,     // min_active: minimum hits remaining to attempt next ring
     2,     // max_rings (default)
-    mist::ring_finding::HoughTransform::kDefaultCollectionRadiusMm
+    mist::ring_finding::HoughTransform::kDefaultCollectionRadiusMm,
+    1      // aggregation_window_cells (default 1 = single-cell peak;
+           // set to 2 for sub-cell-fragmentation recovery on a halved
+           // cell_size / r_step grid — see "Sub-cell aggregation" below)
 );
 
 for (auto &ring : rings)
@@ -346,6 +349,32 @@ for (auto &ring : rings)
 - The returned vector is sorted by descending `peak_votes`, so `rings[0]` is
   the strongest candidate even though the extraction order is "first found,
   next-best after removal".
+
+#### Sub-cell aggregation (`aggregation_window_cells`)
+
+The default peak finder reports the **single accumulator cell** with the
+most votes.  When the underlying detector resolution is comparable to
+`cell_size`, a real ring's votes can fragment across 2–3 adjacent cells
+(boundary effect) and the single-cell peak undercounts.
+
+Setting `aggregation_window_cells = W` (with `W > 1`) switches the peak
+finder to a **sliding `W × W × W` sub-cell window**: at every position on
+the accumulator grid it sums the W³ cells in the window and reports the
+position with the maximum sum.  The reported `(cx, cy, radius)` is the
+window's **centre** (sub-cell-precision back-projection); the reported
+`peak_votes` is the aggregated sum.
+
+The intended usage is together with halved `cell_size` / `r_step` at
+LUT-build time, so that `W × cell_size` matches the original cell width.
+Then the aggregated count probes the same physical volume as the legacy
+single-cell finder, and threshold knobs (`min_hits`,
+`threshold_fraction`) retain their physical meaning — no re-tuning
+needed.  Without halving the grid, `W = 2` covers a `(2·cell_size)`³
+volume which is coarser than the legacy finder; useful only if you
+explicitly want bigger probed cells.
+
+Cost: `O(n_cells × W³)` per peak-finding pass.  Tests pass for
+`W = 1, 2`.  Values >2 are accepted but give diminishing returns.
 
 ---
 
