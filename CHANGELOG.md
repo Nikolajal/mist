@@ -6,7 +6,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [1.1.0] — geometry primitives
+
+First minor release on the 1.x line: additive only, fully backward-compatible
+(`SameMajorVersion`).
 
 ### Added
 - **`mist::algo::intersect_lines` / `line_zero_crossing`**
@@ -236,6 +239,6 @@ any symbol removal within 1.x, and the branching model documented in
 
 ---
 
-[Unreleased]: https://github.com/Nikolajal/mist/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/Nikolajal/mist/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Nikolajal/mist/releases/tag/v1.0.0
 [0.1.0]: https://github.com/Nikolajal/mist/releases/tag/v0.1.0
