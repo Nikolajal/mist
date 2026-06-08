@@ -41,7 +41,7 @@ The library exposes these subsystems:
 | Random numbers   | `mist::`                 | `std::mt19937` wrapper with uniform / normal / Poisson / `generate_phi`    |
 | Logger           | `mist::logger::`         | Coloured terminal logger, single-bar and multi-bar progress, anchored output |
 | Ring finding     | `mist::ring_finding::`   | LUT-accelerated circular Hough-transform ring-finder; closed-form circle-fit refinement (Kåsa / Taubin / Pratt); parametric Cherenkov ring-density model |
-| Generic algorithms | `mist::algo::`         | Header-only iterator-based primitives: `block_mean`, `block_rms`, `moving_mean`, `sign` |
+| Generic algorithms | `mist::algo::`         | Header-only primitives: `block_mean`, `block_rms`, `moving_mean`, `sign`, `log_binning`, line `intersect`/`zero_crossing` (with error propagation) |
 | Bit masks        | `mist::bits::`           | 32-bit mask encode/decode helpers over C++20 `<bit>` |
 | Statistics       | `mist::stats::`          | ROOT-free HEP statistics: sideband subtraction; same-frame timing (triangle acceptance, Poisson-rate MLE) |
 
@@ -118,6 +118,7 @@ The suite contains seven binaries (~11 s total on a modest laptop):
 | `test_ring_model` | [test/tester_ring_model.cxx](test/tester_ring_model.cxx) | logistic-window symmetry, baseline width with/without features, polar peak at `R0`, radial signal integral = `N/(2πR0)`, polar/xy agreement, closed σ-level contour |
 | `test_sideband` | [test/tester_sideband.cxx](test/tester_sideband.cxx) | pure-signal / flat-background / signal-over-background recovery, edge clamping, span types, invalid inputs |
 | `test_timing` | [test/tester_timing.cxx](test/tester_timing.cxx) | triangle acceptance (peak, linear falloff, floor, out-of-support zero), Poisson-rate MLE = 1/mean, empty / zero-mean handling |
+| `test_intersect` | [test/tester_intersect.cxx](test/tester_intersect.cxx) | line intersection (known crossing, line-swap symmetry, hand-checked error propagation, parallel → not ok), zero-crossing (`-q/m`, propagated error, horizontal → not ok) |
 
 ### Continuous integration
 
@@ -153,6 +154,7 @@ Or include only what is needed:
 #include <mist/ring_finding/ring_model.h>              // Cherenkov ring density
 #include <mist/algo/binning.h>                         // block_mean, block_rms
 #include <mist/algo/smoothing.h>                       // moving_mean
+#include <mist/algo/intersect.h>                       // line intersect / zero-crossing
 #include <mist/stats/sideband.h>                       // sideband subtraction
 #include <mist/stats/timing.h>                         // triangle accept., rate MLE
 ```
@@ -507,6 +509,8 @@ mist/
 │   ├── algo/
 │   │   ├── binning.h                   # block_mean, block_rms
 │   │   ├── smoothing.h                 # moving_mean
+│   │   ├── edges.h                     # log_binning
+│   │   ├── intersect.h                 # line intersect / zero-crossing
 │   │   └── util.h                      # sign
 │   └── stats/
 │       ├── sideband.h                  # sideband_subtract
@@ -531,7 +535,8 @@ mist/
 │   ├── tester_circle_fit.cxx
 │   ├── tester_ring_model.cxx
 │   ├── tester_sideband.cxx
-│   └── tester_timing.cxx
+│   ├── tester_timing.cxx
+│   └── tester_intersect.cxx
 └── scripts/
     ├── install.sh                      # honours MIST_INSTALL_PREFIX
     └── install_with_tests.sh           # build + optionally run tests

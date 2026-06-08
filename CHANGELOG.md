@@ -6,6 +6,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- **`mist::algo::intersect_lines` / `line_zero_crossing`**
+  (`include/mist/algo/intersect.h`) — closed-form intersection of two fitted
+  lines, and the zero-crossing of a single line, each with first-order error
+  propagation from the (independent) slope/intercept uncertainties. Returns
+  `{x, x_err, y, y_err, ok}` / `{value, error, ok}`; `ok` is false for parallel
+  lines or a horizontal line. Detector-agnostic (e.g. breakdown-voltage
+  extraction); ROOT-free. Gives the mist bundle a correct home for the
+  intercept maths that downstream analyses had been re-deriving.
+
+---
+
 ## [1.0.0] — API freeze
 
 First release covered by the stability contract documented in
@@ -222,5 +236,6 @@ any symbol removal within 1.x, and the branching model documented in
 
 ---
 
+[Unreleased]: https://github.com/Nikolajal/mist/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/Nikolajal/mist/releases/tag/v1.0.0
 [0.1.0]: https://github.com/Nikolajal/mist/releases/tag/v0.1.0

@@ -127,6 +127,7 @@ if(MIST_BUILD_TESTS)
     mist_add_test(ring_model)
     mist_add_test(sideband)
     mist_add_test(timing)
+    mist_add_test(intersect)
     mist_add_test(io)
     mist_add_test(time)
 

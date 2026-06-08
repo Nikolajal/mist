@@ -50,6 +50,7 @@
 #include <mist/algo/smoothing.h>
 #include <mist/algo/util.h>
 #include <mist/algo/edges.h>
+#include <mist/algo/intersect.h>
 
 //  --- Bit-mask helpers
 #include <mist/bits.h>
