@@ -1,0 +1,52 @@
+name: Docs
+
+# Build Doxygen on every push to main; publish to GitHub Pages.
+# workflow_dispatch lets you trigger a rebuild manually from the Actions tab
+# (useful while main doesn't exist yet, or to re-publish after touching
+# repo settings).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# GitHub Pages with the modern actions/deploy-pages flow needs these.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time; don't cancel an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Doxygen + Graphviz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+
+      - name: Run Doxygen
+        run: doxygen docs/Doxyfile
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

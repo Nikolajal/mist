@@ -1,0 +1,57 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# debug information files
+*.dwo
+
+# custom
+*.DS_Store
+
+# build directory
+build/
+
+# install-target binary directory (kept empty in the source tree)
+bin/
+
+# Claude tooling (sessions, worktrees, etc.)
+.claude/
+.claude/worktrees/
+
+# Doxygen output (built fresh by the docs workflow on every push)
+/docs/_site/

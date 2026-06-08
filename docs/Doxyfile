@@ -1,0 +1,59 @@
+# Minimal Doxyfile for mist — overrides only; everything else is doxygen's
+# defaults (run `doxygen -g` somewhere to see the full set). Designed for
+# the GitHub Pages workflow in .github/workflows/docs.yml: HTML is emitted
+# directly into docs/_site/ so the deploy step can upload it verbatim.
+
+# ---- Project metadata ---------------------------------------------
+PROJECT_NAME           = "mist"
+PROJECT_NUMBER         = "0.1.0"
+PROJECT_BRIEF          = "Make It Simple, Toolkit — C++17 primitives"
+
+# ---- Inputs / outputs ---------------------------------------------
+INPUT                  = README.md \
+                         CHANGELOG.md \
+                         CONTRIBUTING.md \
+                         DISCUSSION.md \
+                         docs/CODING_CONVENTIONS.md \
+                         docs/COMPATIBILITY.md \
+                         include \
+                         src
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.hpp *.hxx *.cxx *.cpp *.md
+EXCLUDE                = build .git .claude .github
+USE_MDFILE_AS_MAINPAGE = README.md
+
+OUTPUT_DIRECTORY       = docs/_site
+HTML_OUTPUT            = .
+GENERATE_LATEX         = NO
+
+# ---- Extraction policy --------------------------------------------
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MARKDOWN_SUPPORT       = YES
+# Use GitHub-style anchor IDs so README/DISCUSSION ToC links resolve.
+MARKDOWN_ID_STYLE      = GITHUB
+
+# ---- Diagnostics --------------------------------------------------
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = NO
+
+# ---- Graphs (requires graphviz) -----------------------------------
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+
+# ---- HTML look ----------------------------------------------------
+HTML_COLORSTYLE        = AUTO_LIGHT
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
