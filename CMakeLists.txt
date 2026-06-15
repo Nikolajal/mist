@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
 project(mist
-    VERSION      1.0.0
+    VERSION      1.2.0
     DESCRIPTION  "MIST — Make It Simple, Toolkit"
     LANGUAGES    CXX
 )
@@ -124,6 +124,7 @@ if(MIST_BUILD_TESTS)
     mist_add_test(algo)
     mist_add_test(bits)
     mist_add_test(circle_fit)
+    mist_add_test(ransac)
     mist_add_test(ring_model)
     mist_add_test(sideband)
     mist_add_test(timing)

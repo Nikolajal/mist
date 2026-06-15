@@ -40,10 +40,12 @@ The library exposes these subsystems:
 |------------------|--------------------------|----------------------------------------------------------------------------|
 | Random numbers   | `mist::`                 | `std::mt19937` wrapper with uniform / normal / Poisson / `generate_phi`    |
 | Logger           | `mist::logger::`         | Coloured terminal logger, single-bar and multi-bar progress, anchored output |
-| Ring finding     | `mist::ring_finding::`   | LUT-accelerated circular Hough-transform ring-finder; closed-form circle-fit refinement (Kåsa / Taubin / Pratt); parametric Cherenkov ring-density model |
+| Ring finding     | `mist::ring_finding::`   | LUT-accelerated circular Hough-transform ring-finder; grid-free RANSAC ring-finder with a completeness-corrected score (recovers far-off-centre arcs under a noise majority); closed-form circle-fit refinement (Kåsa / Taubin / Pratt); parametric Cherenkov ring-density model |
 | Generic algorithms | `mist::algo::`         | Header-only primitives: `block_mean`, `block_rms`, `moving_mean`, `sign`, `log_binning`, line `intersect`/`zero_crossing` (with error propagation) |
 | Bit masks        | `mist::bits::`           | 32-bit mask encode/decode helpers over C++20 `<bit>` |
 | Statistics       | `mist::stats::`          | ROOT-free HEP statistics: sideband subtraction; same-frame timing (triangle acceptance, Poisson-rate MLE) |
+| I/O              | `mist::io::`             | Header-only delimited-text readers: `read_csv` (empty fields preserved), `read_txt` (whitespace runs collapse); ragged rows padded, missing file yields empty (no throw) |
+| Time             | `mist::time::`           | Header-only timestamp `parse` / `to_string` round-trip over `<ctime>`, with chronological ordering and invalid-input rejection |
 
 ROOT-typed analysis helpers built on top of mist live in the sibling
 repository [mist-hep](https://github.com/Nikolajal/mist-hep); see the
@@ -105,7 +107,7 @@ Or use the helper script which builds and runs everything in one shot:
 bash scripts/install_with_tests.sh --run
 ```
 
-The suite contains seven binaries (~11 s total on a modest laptop):
+The suite contains thirteen binaries (~11 s total on a modest laptop):
 
 | Binary        | Source                                          | Coverage                                                            |
 |---------------|-------------------------------------------------|---------------------------------------------------------------------|
@@ -119,6 +121,9 @@ The suite contains seven binaries (~11 s total on a modest laptop):
 | `test_sideband` | [test/tester_sideband.cxx](test/tester_sideband.cxx) | pure-signal / flat-background / signal-over-background recovery, edge clamping, span types, invalid inputs |
 | `test_timing` | [test/tester_timing.cxx](test/tester_timing.cxx) | triangle acceptance (peak, linear falloff, floor, out-of-support zero), Poisson-rate MLE = 1/mean, empty / zero-mean handling |
 | `test_intersect` | [test/tester_intersect.cxx](test/tester_intersect.cxx) | line intersection (known crossing, line-swap symmetry, hand-checked error propagation, parallel → not ok), zero-crossing (`-q/m`, propagated error, horizontal → not ok) |
+| `test_ransac` | [test/tester_ransac.cxx](test/tester_ransac.cxx) | far-off-centre bright arc recovered under a uniform-noise majority; sparse far arc recovered via the completeness correction (with and without an explicit sensor fiducial); cross-platform determinism; two-ring remove-and-repeat; pure noise yields no spurious ring |
+| `test_io`     | [test/tester_io.cxx](test/tester_io.cxx)         | delimited-text readers: `read_csv` field preservation, `read_txt` whitespace collapsing, ragged-row padding, missing file → empty (no throw) |
+| `test_time`   | [test/tester_time.cxx](test/tester_time.cxx)     | timestamp `parse` / `to_string` round-trip, chronological ordering, invalid-input rejection |
 
 ### Continuous integration
 
@@ -150,6 +155,7 @@ Or include only what is needed:
 #include <mist/logger/progress_bar.h>                  // single progress bar
 #include <mist/logger/multi_progress_bar.h>            // composite multi-bar
 #include <mist/ring_finding/hough_transform.h>         // Hough ring-finder
+#include <mist/ring_finding/ransac_ring_finder.h>      // grid-free RANSAC ring-finder
 #include <mist/ring_finding/circle_fit.h>              // Kåsa / Taubin / Pratt fit
 #include <mist/ring_finding/ring_model.h>              // Cherenkov ring density
 #include <mist/algo/binning.h>                         // block_mean, block_rms
@@ -434,6 +440,54 @@ diminishing returns.
 
 ---
 
+### `mist::ring_finding::find_rings_ransac` — grid-free RANSAC ring finder
+
+A complementary, accumulator-free ring finder for the regime the Hough grid
+handles poorly: a **far-off-centre Cherenkov arc** (centre well outside the
+sensor) sitting on a **uniform-noise majority**. It reuses the same `Hit` /
+`RingResult` types and the Taubin `circle_fit`, and is header-only.
+
+```cpp
+#include <mist/ring_finding/ransac_ring_finder.h>
+
+std::vector<mist::ring_finding::Hit> hits = make_hits(raw_hits);
+
+mist::ring_finding::RansacOptions opt;
+opt.max_rings        = 1;
+opt.iterations       = 1500;   // 3-point samples per ring
+opt.inlier_band      = 6.0;    // |dist − R| < band ⇒ inlier [mm]
+opt.min_inliers      = 50;
+opt.min_significance = 5.0;    // accept only if excess > Nσ over background
+opt.r_min            = 50.0;
+opt.r_max            = 1000.0;
+// For sparse per-event frames, pass the KNOWN sensor window so the
+// completeness correction has a geometric reference (else it falls back to
+// the hit bounding box, which a few clustered hits do not fill):
+// opt.fiducial_xmin/xmax/ymin/ymax = …;
+
+auto rings = mist::ring_finding::find_rings_ransac(hits, opt);
+```
+
+#### Algorithm notes
+
+- **No accumulator** → the centre/radius range is unbounded for free; a circle
+  through three arc points lands at the true centre however far off-sensor it is,
+  where a single least-squares fit collapses to the noise centroid near the origin.
+- **Completeness-corrected score** → candidates are ranked by inlier *excess over
+  background* per mm of *on-sensor* arc length, so a 36° far arc showing ~10 % of
+  its circumference competes on equal footing with a fully-visible small ring,
+  rather than always losing on raw count.
+- **Significance gate** rejects pure noise (excess must exceed `min_significance`
+  σ of the Poisson background over the visible arc).
+- **Optional per-hit `weights`** down-weight high-occupancy channels so a *faint*
+  arc can still beat a bright background.
+- **Deterministic and portable** — the sampler is seeded and draws indices with a
+  Lemire multiply-shift over the engine's raw output rather than
+  `std::uniform_int_distribution`, so results are identical across calls *and*
+  across standard libraries (libstdc++ / libc++ / MSVC).
+
+---
+
 ## Documentation
 
 - **API reference** (Doxygen, auto-deployed on push to `main`):
@@ -504,6 +558,7 @@ mist/
 │   │   └── multi_progress_bar.h        # composite header + subtask bars
 │   ├── ring_finding/
 │   │   ├── hough_transform.h
+│   │   ├── ransac_ring_finder.h        # grid-free RANSAC + completeness score
 │   │   ├── circle_fit.h                # Kåsa / Taubin / Pratt refinement
 │   │   └── ring_model.h                # Cherenkov ring-density model
 │   ├── algo/
@@ -522,7 +577,7 @@ mist/
 │   │   ├── progress_bar.cxx
 │   │   └── multi_progress_bar.cxx
 │   ├── ring_finding/
-│   │   └── hough_transform.cxx
+│   │   └── hough_transform.cxx         # RANSAC + circle-fit are header-only
 │   └── algo/
 │       └── algo.cxx                    # TU placeholder; templates instantiate
 │                                       # at the call site
@@ -536,7 +591,10 @@ mist/
 │   ├── tester_ring_model.cxx
 │   ├── tester_sideband.cxx
 │   ├── tester_timing.cxx
-│   └── tester_intersect.cxx
+│   ├── tester_intersect.cxx
+│   ├── tester_ransac.cxx
+│   ├── tester_io.cxx
+│   └── tester_time.cxx
 └── scripts/
     ├── install.sh                      # honours MIST_INSTALL_PREFIX
     └── install_with_tests.sh           # build + optionally run tests

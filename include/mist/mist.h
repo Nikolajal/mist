@@ -12,7 +12,7 @@
  * #include <mist/mist.h>                         // everything
  * #include <mist/logger/logger.h>                // logger + ProgressBar
  * #include <mist/logger/progress_bar.h>          // ProgressBar only
- * #include <mist/ring_finding/hough_transform.h> // Hough ring-finder
+ * #include <mist/ring_finding/ransac_ring_finder.h> // RANSAC ring-finder
  * #include <mist/algo/binning.h>                 // block_mean, block_rms
  * #include <mist/algo/smoothing.h>               // moving_mean
  * #include <mist/rnd.h>                          // RNG only
@@ -43,6 +43,7 @@
 //  --- Domain algorithms
 #include <mist/ring_finding/hough_transform.h>
 #include <mist/ring_finding/circle_fit.h>
+#include <mist/ring_finding/ransac_ring_finder.h>
 #include <mist/ring_finding/ring_model.h>
 
 //  --- Generic algorithmic primitives

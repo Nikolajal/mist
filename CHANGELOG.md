@@ -6,6 +6,48 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.2.0] — grid-free ring finding
+
+Additive only, fully backward-compatible (`SameMajorVersion`).
+
+### Added
+- **`mist::ring_finding::find_rings_ransac`**
+  (`include/mist/ring_finding/ransac_ring_finder.h`) — a grid-free RANSAC ring
+  finder for the regime the Hough accumulator handles poorly: a far-off-centre
+  Cherenkov arc (centre well outside the sensor) on a uniform-noise majority,
+  where a single least-squares circle collapses to the noise centroid near the
+  origin. Samples 3 hits → the closed-form circle, scores by inlier **excess
+  over background per mm of on-sensor arc length** (the *completeness
+  correction* — a far 36° arc showing ~10 % of its ring competes on equal
+  footing with a fully-visible small ring), gates on Poisson significance to
+  reject pure noise, and refines the winner with the Taubin `circle_fit`.
+  Reuses the shared `Hit` / `RingResult` types; supports optional per-hit
+  `weights` (down-weight high-occupancy channels) and an explicit sensor
+  fiducial (`RansacOptions::fiducial_*`) for sparse per-event frames.
+  Header-only and ROOT-free. New `test_ransac` covers far-arc recovery under a
+  noise majority, the sparse / fiducial regimes, two-ring remove-and-repeat,
+  pure-noise rejection, and cross-platform determinism.
+
+### Fixed
+- **`find_package(mist 1.x)` version check** — the CMake `project(... VERSION)`
+  had been left at `1.0.0` through the 1.1.0 release, so the installed
+  `mistConfigVersion.cmake` advertised `1.0.0` and a downstream
+  `find_package(mist 1.1)` (or `1.2`) failed the `SameMajorVersion` check
+  despite the API being present. The project version now tracks the release.
+
+### Internal
+- Adopted a shared `.clang-format` (LLVM-based, repo conventions) with a repo-
+  wide reformat, and a CI `clang-format` gate mirroring the sibling
+  beam-test-analysis workflow. The formatter is pinned to clang-format 22 (via
+  the PyPI wheel) so CI matches the maintainer's local toolchain exactly;
+  Ubuntu's apt clang-format-18 drifts on some constructs.
+- The RANSAC sampler draws triplet indices with a portable Lemire multiply-shift
+  over the engine's raw 32-bit output instead of `std::uniform_int_distribution`
+  (whose mapping is implementation-defined), making the finder bit-identical
+  across libstdc++ / libc++ / MSVC.
+
+---
+
 ## [1.1.0] — geometry primitives
 
 First minor release on the 1.x line: additive only, fully backward-compatible
