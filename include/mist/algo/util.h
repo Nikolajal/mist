@@ -9,7 +9,8 @@
 
 #include <type_traits>
 
-namespace mist::algo {
+namespace mist::algo
+{
 
 // ---------------------------------------------------------------------------
 // sign: three-valued signum. Returns -1, 0, or +1.
@@ -27,4 +28,4 @@ template <typename T>
     return (T(0) < value) - (value < T(0));
 }
 
-}  // namespace mist::algo
+} // namespace mist::algo

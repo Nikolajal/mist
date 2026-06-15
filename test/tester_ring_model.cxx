@@ -17,28 +17,34 @@
 
 namespace rf = mist::ring_finding;
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) {
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
         std::printf("  FAIL: %s\n", what);
         ++failures;
     }
 }
 
-void check_close(double got, double want, double tol, const char* what) {
-    if (std::fabs(got - want) > tol) {
+void check_close(double got, double want, double tol, const char *what)
+{
+    if (std::fabs(got - want) > tol)
+    {
         std::printf("  FAIL: %s — got %.6g, want %.6g (tol %.3g)\n",
                     what, got, want, tol);
         ++failures;
     }
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     std::puts("[tester_ring_model] ring_sigma / logistic_window");
     {
         // No features -> exactly the baseline at any phi.
@@ -56,8 +62,12 @@ int main() {
     std::puts("[tester_ring_model] ring_density_polar");
     {
         rf::ring_params p;
-        p.x0 = 0.0; p.y0 = 0.0; p.radius = 10.0; p.sigma = 0.5;
-        p.photons = 4.0; p.background = 0.3;
+        p.x0 = 0.0;
+        p.y0 = 0.0;
+        p.radius = 10.0;
+        p.sigma = 0.5;
+        p.photons = 4.0;
+        p.background = 0.3;
 
         // Peak in R sits at the ring radius (background symmetric about it).
         const double on_ring = rf::ring_density_polar(10.0, 0.0, p);
@@ -81,8 +91,12 @@ int main() {
     std::puts("[tester_ring_model] ring_density_xy");
     {
         rf::ring_params p;
-        p.x0 = 1.0; p.y0 = -2.0; p.radius = 5.0; p.sigma = 0.4;
-        p.photons = 3.0; p.background = 0.1;
+        p.x0 = 1.0;
+        p.y0 = -2.0;
+        p.radius = 5.0;
+        p.sigma = 0.4;
+        p.photons = 3.0;
+        p.background = 0.1;
 
         // A point on the +x ray from the centre at distance R should match the
         // polar evaluation at (R, phi=0).
@@ -94,15 +108,23 @@ int main() {
     std::puts("[tester_ring_model] ring_contour");
     {
         rf::ring_params p;
-        p.x0 = 2.0; p.y0 = 3.0; p.radius = 7.0; p.sigma = 1.0;
+        p.x0 = 2.0;
+        p.y0 = 3.0;
+        p.radius = 7.0;
+        p.sigma = 1.0;
 
         const auto pts = rf::ring_contour(p, 0.0, {}, 200);
         check(pts.size() == 201, "n_points+1 contour points");
         // At sigma_level 0 every point is at radius R0 from the centre.
         bool all_on_ring = true;
-        for (const auto& q : pts) {
+        for (const auto &q : pts)
+        {
             const double r = std::hypot(q[0] - p.x0, q[1] - p.y0);
-            if (std::fabs(r - 7.0) > 1e-9) { all_on_ring = false; break; }
+            if (std::fabs(r - 7.0) > 1e-9)
+            {
+                all_on_ring = false;
+                break;
+            }
         }
         check(all_on_ring, "sigma_level 0 contour lies on R0");
         // Closed loop: first and last point coincide (phi -pi and +pi).
@@ -112,7 +134,8 @@ int main() {
         check(rf::ring_contour(p, 1.0, {}, 0).empty(), "zero points -> empty");
     }
 
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_ring_model] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }

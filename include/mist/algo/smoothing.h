@@ -23,7 +23,8 @@
 #include <ranges>
 #include <vector>
 
-namespace mist::algo {
+namespace mist::algo
+{
 
 // ---------------------------------------------------------------------------
 // moving_mean — sliding window of size `n` advancing by one element.
@@ -41,24 +42,28 @@ moving_mean(ForwardIt first, ForwardIt last, std::size_t n)
 {
     using T = typename std::iterator_traits<ForwardIt>::value_type;
     std::vector<T> out;
-    if (n == 0) return out;
+    if (n == 0)
+        return out;
 
     const auto size = static_cast<std::size_t>(std::distance(first, last));
-    if (n > size) return out;
+    if (n > size)
+        return out;
 
     out.reserve(size - n + 1);
 
     // Initial window: positions [0, n).
     T sum = T(0);
     auto window_end = first;
-    for (std::size_t i = 0; i < n; ++i, ++window_end) sum += *window_end;
+    for (std::size_t i = 0; i < n; ++i, ++window_end)
+        sum += *window_end;
 
     const T inv_n = T(1) / static_cast<T>(n);
     out.push_back(sum * inv_n);
 
     // Slide: subtract the element leaving, add the element entering.
     auto window_start = first;
-    while (window_end != last) {
+    while (window_end != last)
+    {
         sum += *window_end - *window_start;
         ++window_end;
         ++window_start;
@@ -70,9 +75,9 @@ moving_mean(ForwardIt first, ForwardIt last, std::size_t n)
 template <std::ranges::forward_range R>
     requires std::floating_point<std::ranges::range_value_t<R>>
 [[nodiscard]] auto
-moving_mean(R&& r, std::size_t n)
+moving_mean(R &&r, std::size_t n)
 {
     return moving_mean(std::ranges::begin(r), std::ranges::end(r), n);
 }
 
-}  // namespace mist::algo
+} // namespace mist::algo

@@ -13,28 +13,34 @@
 
 namespace s = mist::stats;
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) {
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
         std::printf("  FAIL: %s\n", what);
         ++failures;
     }
 }
 
-void check_close(double got, double want, double tol, const char* what) {
-    if (std::fabs(got - want) > tol) {
+void check_close(double got, double want, double tol, const char *what)
+{
+    if (std::fabs(got - want) > tol)
+    {
         std::printf("  FAIL: %s — got %.6g, want %.6g (tol %.3g)\n",
                     what, got, want, tol);
         ++failures;
     }
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     std::puts("[tester_timing] triangle_acceptance");
     {
         const double L = 100.0;
@@ -70,7 +76,8 @@ int main() {
         check(!rz.ok && rz.rate == 0.0, "zero mean -> not ok");
     }
 
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_timing] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }

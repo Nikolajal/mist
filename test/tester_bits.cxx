@@ -11,17 +11,24 @@
 
 namespace b = mist::bits;
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) { std::printf("  FAIL: %s\n", what); ++failures; }
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
+        std::printf("  FAIL: %s\n", what);
+        ++failures;
+    }
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     std::puts("[tester_bits] encode_bit");
     check(b::encode_bit(0) == 0x1u, "bit 0");
     check(b::encode_bit(1) == 0x2u, "bit 1");
@@ -67,11 +74,13 @@ int main() {
 
     // Round-trip: encode_bits(decode_bits(m)) == m for arbitrary masks.
     std::puts("[tester_bits] round-trip");
-    for (std::uint32_t m : {0u, 0x1u, 0xCAFEu, 0xFFFFFFFFu, 0x80000000u}) {
+    for (std::uint32_t m : {0u, 0x1u, 0xCAFEu, 0xFFFFFFFFu, 0x80000000u})
+    {
         check(b::encode_bits(b::decode_bits(m)) == m, "encode_bits(decode_bits(m)) == m");
     }
 
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_bits] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }

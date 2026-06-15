@@ -182,8 +182,8 @@ void test_progress_bar_finish_emits_final_frame()
 
     {
         mist::logger::ProgressBar bar;
-        bar.update(7, 10, /*flush=*/false);   // bar visually at 70%
-        bar.finish(/*flush=*/false);          // must commit 100% frame
+        bar.update(7, 10, /*flush=*/false); // bar visually at 70%
+        bar.finish(/*flush=*/false);        // must commit 100% frame
     }
 
     const std::string out = cap.cout_buf.str();

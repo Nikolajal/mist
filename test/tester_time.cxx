@@ -8,23 +8,31 @@
 #include <cstdlib>
 #include <string>
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) { std::printf("  FAIL: %s\n", what); ++failures; }
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
+        std::printf("  FAIL: %s\n", what);
+        ++failures;
+    }
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     std::puts("[tester_time] round-trip");
     {
         const std::string ts = "20260608-123456";
         const auto t = mist::time::parse(ts);
         check(t.has_value(), "parse: valid timestamp");
-        if (t) check(mist::time::to_string(*t) == ts, "round-trip parse -> to_string");
+        if (t)
+            check(mist::time::to_string(*t) == ts, "round-trip parse -> to_string");
     }
 
     std::puts("[tester_time] ordering");
@@ -32,7 +40,8 @@ int main() {
         const auto a = mist::time::parse("20260608-120000");
         const auto b = mist::time::parse("20260608-120001");
         check(a && b, "parse: both valid");
-        if (a && b) check(*b > *a, "one second later compares greater");
+        if (a && b)
+            check(*b > *a, "one second later compares greater");
     }
     {
         const auto day1 = mist::time::parse("20260101-000000");
@@ -48,7 +57,8 @@ int main() {
         check(!mist::time::parse("2026-06-08 12:00").has_value(), "wrong format -> nullopt");
     }
 
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_time] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }

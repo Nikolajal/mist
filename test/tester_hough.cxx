@@ -44,19 +44,19 @@ static int s_tests_failed = 0;
         }                                                          \
     } while (false)
 
-#define CHECK_NEAR(value, target, tol)                                       \
-    do                                                                       \
-    {                                                                        \
-        ++s_tests_run;                                                       \
-        const double _v = static_cast<double>(value);                        \
-        const double _t = static_cast<double>(target);                       \
-        if (!(std::fabs(_v - _t) <= (tol)))                                  \
-        {                                                                    \
-            ++s_tests_failed;                                                \
-            std::cerr << "  FAIL  " << __FILE__ << ":" << __LINE__           \
-                      << "  |" << #value << " - " << _t << "| > " << (tol)   \
-                      << "  (got " << _v << ")\n";                           \
-        }                                                                    \
+#define CHECK_NEAR(value, target, tol)                                     \
+    do                                                                     \
+    {                                                                      \
+        ++s_tests_run;                                                     \
+        const double _v = static_cast<double>(value);                      \
+        const double _t = static_cast<double>(target);                     \
+        if (!(std::fabs(_v - _t) <= (tol)))                                \
+        {                                                                  \
+            ++s_tests_failed;                                              \
+            std::cerr << "  FAIL  " << __FILE__ << ":" << __LINE__         \
+                      << "  |" << #value << " - " << _t << "| > " << (tol) \
+                      << "  (got " << _v << ")\n";                         \
+        }                                                                  \
     } while (false)
 
 // ---------------------------------------------------------------------------
@@ -65,50 +65,50 @@ static int s_tests_failed = 0;
 
 namespace
 {
-    constexpr float pi = 3.14159265358979323846f;
+constexpr float pi = 3.14159265358979323846f;
 
-    /// Build a regular square grid geometry of @p side × @p side pixels with
-    /// @p pitch mm spacing.  Used as the LUT key → (x,y) map.
-    std::map<int, std::array<float, 2>>
-    make_grid_geometry(int side, float pitch)
+/// Build a regular square grid geometry of @p side × @p side pixels with
+/// @p pitch mm spacing.  Used as the LUT key → (x,y) map.
+std::map<int, std::array<float, 2>>
+make_grid_geometry(int side, float pitch)
+{
+    std::map<int, std::array<float, 2>> geom;
+    for (int iy = 0; iy < side; ++iy)
+        for (int ix = 0; ix < side; ++ix)
+            geom[iy * side + ix] = {ix * pitch, iy * pitch};
+    return geom;
+}
+
+/// Build @p n_hits hits uniformly distributed along the arc of a circle
+/// centred at (@p cx, @p cy) with radius @p R.  Each Hit is snapped to
+/// the nearest grid point so the lut_key is valid.
+std::vector<mist::ring_finding::Hit>
+make_ring_hits(float cx, float cy, float R, int n_hits,
+               int side, float pitch, float time = 0.f)
+{
+    std::vector<mist::ring_finding::Hit> hits;
+    hits.reserve(n_hits);
+    for (int i = 0; i < n_hits; ++i)
     {
-        std::map<int, std::array<float, 2>> geom;
-        for (int iy = 0; iy < side; ++iy)
-            for (int ix = 0; ix < side; ++ix)
-                geom[iy * side + ix] = {ix * pitch, iy * pitch};
-        return geom;
+        const float angle = 2.f * pi * i / n_hits;
+        const float x = cx + R * std::cos(angle);
+        const float y = cy + R * std::sin(angle);
+
+        const int ix = static_cast<int>(std::round(x / pitch));
+        const int iy = static_cast<int>(std::round(y / pitch));
+        if (ix < 0 || iy < 0 || ix >= side || iy >= side)
+            continue;
+
+        mist::ring_finding::Hit h;
+        h.x = ix * pitch;
+        h.y = iy * pitch;
+        h.time = time;
+        h.lut_key = iy * side + ix;
+        hits.push_back(h);
     }
-
-    /// Build @p n_hits hits uniformly distributed along the arc of a circle
-    /// centred at (@p cx, @p cy) with radius @p R.  Each Hit is snapped to
-    /// the nearest grid point so the lut_key is valid.
-    std::vector<mist::ring_finding::Hit>
-    make_ring_hits(float cx, float cy, float R, int n_hits,
-                   int side, float pitch, float time = 0.f)
-    {
-        std::vector<mist::ring_finding::Hit> hits;
-        hits.reserve(n_hits);
-        for (int i = 0; i < n_hits; ++i)
-        {
-            const float angle = 2.f * pi * i / n_hits;
-            const float x = cx + R * std::cos(angle);
-            const float y = cy + R * std::sin(angle);
-
-            const int ix = static_cast<int>(std::round(x / pitch));
-            const int iy = static_cast<int>(std::round(y / pitch));
-            if (ix < 0 || iy < 0 || ix >= side || iy >= side)
-                continue;
-
-            mist::ring_finding::Hit h;
-            h.x = ix * pitch;
-            h.y = iy * pitch;
-            h.time = time;
-            h.lut_key = iy * side + ix;
-            hits.push_back(h);
-        }
-        return hits;
-    }
-} // anonymous
+    return hits;
+}
+} // namespace
 
 // ---------------------------------------------------------------------------
 // LUT readiness — the early-return branch in find_rings
@@ -171,7 +171,7 @@ void test_find_rings_recovers_single_ring()
     // Truth: circle centred well inside the grid.
     const float cx_true = 45.f;
     const float cy_true = 45.f;
-    const float R_true  = 18.f;
+    const float R_true = 18.f;
 
     auto hits = make_ring_hits(cx_true, cy_true, R_true, 36, side, pitch);
     CHECK(hits.size() >= 20); // grid quantisation may drop a few
@@ -182,10 +182,10 @@ void test_find_rings_recovers_single_ring()
         return;
 
     // Recovered centre / radius should land within the accumulator cell size.
-    CHECK_NEAR(rings[0].cx,     cx_true, cell_size);
-    CHECK_NEAR(rings[0].cy,     cy_true, cell_size);
+    CHECK_NEAR(rings[0].cx, cx_true, cell_size);
+    CHECK_NEAR(rings[0].cy, cy_true, cell_size);
     // Radius is sampled in 1 mm bins, so the recovered R must be within ±1 mm.
-    CHECK_NEAR(rings[0].radius, R_true,  1.0f);
+    CHECK_NEAR(rings[0].radius, R_true, 1.0f);
     // Most of the injected hits should be associated.
     CHECK(static_cast<int>(rings[0].hit_indices.size()) >= 15);
 }
@@ -268,11 +268,11 @@ void test_rings_sorted_by_descending_votes()
     ht.build_lut(geom, 10.f, 25.f, 1.f, 3.2f);
 
     // Two rings — one much denser than the other.
-    auto hits_dense  = make_ring_hits(30.f, 30.f, 15.f, 72, side, pitch);
+    auto hits_dense = make_ring_hits(30.f, 30.f, 15.f, 72, side, pitch);
     auto hits_sparse = make_ring_hits(85.f, 85.f, 20.f, 24, side, pitch);
 
     std::vector<mist::ring_finding::Hit> hits;
-    hits.insert(hits.end(), hits_dense.begin(),  hits_dense.end());
+    hits.insert(hits.end(), hits_dense.begin(), hits_dense.end());
     hits.insert(hits.end(), hits_sparse.begin(), hits_sparse.end());
 
     const auto rings = ht.find_rings(hits, {.threshold_fraction = 0.1f, .min_hits = 5, .min_active = 5, .max_rings = 2});
@@ -340,7 +340,9 @@ void test_unknown_lut_keys_are_ignored()
     for (int i = 0; i < 10; ++i)
     {
         mist::ring_finding::Hit h;
-        h.x = 0.f; h.y = 0.f; h.time = 0.f;
+        h.x = 0.f;
+        h.y = 0.f;
+        h.time = 0.f;
         h.lut_key = 99999; // not in geometry
         hits.push_back(h);
     }

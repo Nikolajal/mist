@@ -10,22 +10,30 @@
 #include <string>
 #include <vector>
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) { std::printf("  FAIL: %s\n", what); ++failures; }
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
+        std::printf("  FAIL: %s\n", what);
+        ++failures;
+    }
 }
 
-void write_file(const char* path, const char* content) {
+void write_file(const char *path, const char *content)
+{
     std::ofstream f(path);
     f << content;
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     // Quieten the expected error from the missing-file case.
     const auto prev = mist::logger::get_min_level();
 
@@ -66,7 +74,7 @@ int main() {
 
     std::puts("[tester_io] ragged rows pad with empty");
     {
-        write_file("tester_io_tmp3.csv", "a,b,c\n1,2\n");  // short row
+        write_file("tester_io_tmp3.csv", "a,b,c\n1,2\n"); // short row
         const auto t = mist::io::read_csv("tester_io_tmp3.csv");
         check(t.at("a")[0] == "1", "ragged: a kept");
         check(t.at("c")[0] == "", "ragged: missing c -> empty");
@@ -81,7 +89,8 @@ int main() {
 
     mist::logger::set_min_level(prev);
 
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_io] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }

@@ -43,19 +43,19 @@ static int s_tests_failed = 0;
         }                                                          \
     } while (false)
 
-#define CHECK_NEAR(value, target, tol)                                       \
-    do                                                                       \
-    {                                                                        \
-        ++s_tests_run;                                                       \
-        const double _v = static_cast<double>(value);                        \
-        const double _t = static_cast<double>(target);                       \
-        if (!(std::fabs(_v - _t) <= (tol)))                                  \
-        {                                                                    \
-            ++s_tests_failed;                                                \
-            std::cerr << "  FAIL  " << __FILE__ << ":" << __LINE__           \
-                      << "  |" << #value << " - " << _t << "| > " << (tol)   \
-                      << "  (got " << _v << ")\n";                           \
-        }                                                                    \
+#define CHECK_NEAR(value, target, tol)                                     \
+    do                                                                     \
+    {                                                                      \
+        ++s_tests_run;                                                     \
+        const double _v = static_cast<double>(value);                      \
+        const double _t = static_cast<double>(target);                     \
+        if (!(std::fabs(_v - _t) <= (tol)))                                \
+        {                                                                  \
+            ++s_tests_failed;                                              \
+            std::cerr << "  FAIL  " << __FILE__ << ":" << __LINE__         \
+                      << "  |" << #value << " - " << _t << "| > " << (tol) \
+                      << "  (got " << _v << ")\n";                         \
+        }                                                                  \
     } while (false)
 
 // ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ void test_uniform_float_does_not_throw()
 {
     // The SFINAE alias must accept float, double, and long double.
     mist::Rnd r(13);
-    const float  f = r.uniform(0.f, 1.f);
+    const float f = r.uniform(0.f, 1.f);
     const double d = r.uniform(0.0, 1.0);
     CHECK(f >= 0.f && f < 1.f);
     CHECK(d >= 0.0 && d < 1.0);
@@ -184,7 +184,7 @@ void test_normal_moments()
         sumsq += x * x;
     }
     const double mean = sum / N;
-    const double var  = sumsq / N - mean * mean;
+    const double var = sumsq / N - mean * mean;
 
     // sigma of sample mean = sig / sqrt(N) ≈ 4.5e-3.   5-sigma ≈ 2.3e-2.
     CHECK_NEAR(mean, mu, 3e-2);
@@ -214,8 +214,22 @@ void test_poisson_rejects_invalid_lambda()
 {
     mist::Rnd r(1);
     bool threw_zero = false, threw_neg = false;
-    try { (void)r.poisson(0.0); } catch (const std::invalid_argument &) { threw_zero = true; }
-    try { (void)r.poisson(-1.0); } catch (const std::invalid_argument &) { threw_neg = true; }
+    try
+    {
+        (void)r.poisson(0.0);
+    }
+    catch (const std::invalid_argument &)
+    {
+        threw_zero = true;
+    }
+    try
+    {
+        (void)r.poisson(-1.0);
+    }
+    catch (const std::invalid_argument &)
+    {
+        threw_neg = true;
+    }
     CHECK(threw_zero);
     CHECK(threw_neg);
 }

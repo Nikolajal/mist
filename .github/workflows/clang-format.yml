@@ -1,0 +1,168 @@
+# .github/workflows/clang-format.yml
+#
+# Format guard for mist — mirrors the sibling beam-test-analysis workflow so the
+# shared conventions (docs/CODING_CONVENTIONS.md + .clang-format) are enforced
+# identically across repos.  Two behaviours, depending on event:
+#
+#   ── pull_request (the primary path) ─────────────────────────────────
+#   Apply `clang-format -i` to every C++ source under include/, src/, test/.
+#   If the working tree is dirty after that:
+#     - same-repo PR → commit the fix-up and push it to the PR branch
+#                      (a fresh "style: apply clang-format" commit, not a
+#                      force-push amend — preserves WHO asked for the fix).
+#                      This run exits non-zero so the new commit's CI run is
+#                      the green one the merge button looks at.
+#     - fork PR        → cannot push to the fork; fail with the diff so the
+#                      author runs the fix locally.
+#
+#   ── push to main/dev (defence-in-depth only) ────────────────────────
+#   Read-only dry-run check, fail on diff.  main/dev are normally reached
+#   only via merged PRs, so this is a safety net for direct pushes.
+#
+# ── The gate job (`format-gate`) ────────────────────────────────────
+# The `format` job auto-pushes the fix but is a CONVENIENCE, not a gate (a
+# maintainer who merges instantly beats it).  `format-gate` is a separate
+# READ-ONLY job (`clang-format --dry-run -Werror`) that is RED on any diff and
+# GREEN when clean — mark it a REQUIRED status check on dev/main so the merge
+# button stays locked until formatting is clean.
+#
+# ── clang-format version pin ────────────────────────────────────────
+# Pinned to clang-format 22.1.5 via the PyPI wheel (`pipx install`) so CI matches
+# the maintainer's local Homebrew v22 exactly.  Ubuntu noble's apt clang-format-18
+# drifts from v22 on at least one construct (`struct winsize w{};`), so the apt
+# default is NOT safe.  Bump this pin in lockstep with the local toolchain; patch
+# releases (22.1.x) are formatting-stable, so 22.1.5 matches local 22.1.6.
+
+name: clang-format
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: clang-format-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Verify / fix C++ formatting
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Install clang-format
+        run: |
+          pipx install "clang-format==22.1.5"
+          clang-format --version
+
+      - name: Apply clang-format
+        id: apply
+        run: |
+          set -e
+          mapfile -d '' files < <(find include src test -type f \
+              \( -name '*.h' -o -name '*.cxx' -o -name '*.cpp' -o -name '*.hpp' \) \
+              -not -path '*/build/*' -print0)
+          echo "Found ${#files[@]} source files to check."
+
+          clang-format -i --style=file "${files[@]}"
+
+          if git diff --quiet; then
+              echo "result=clean" >> "$GITHUB_OUTPUT"
+              echo "All ${#files[@]} files match the project clang-format style. ✓"
+              exit 0
+          fi
+
+          echo "result=dirty" >> "$GITHUB_OUTPUT"
+          echo ""
+          echo "── clang-format produced changes ──"
+          git --no-pager diff --stat
+          echo ""
+          git --no-pager diff | head -300
+
+      - name: Auto-fix (same-repo PR only)
+        if: |
+          steps.apply.outputs.result == 'dirty' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          set -e
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "style: apply clang-format" \
+                     -m "Auto-applied by .github/workflows/clang-format.yml on PR #${{ github.event.pull_request.number }}."
+          git push origin HEAD:"${{ github.event.pull_request.head.ref }}"
+
+          {
+              echo "## clang-format auto-fix applied"
+              echo ""
+              echo "Pushed a 'style: apply clang-format' commit to "
+              echo "\`${{ github.event.pull_request.head.ref }}\`."
+              echo ""
+              echo "The new commit will re-trigger CI; that run is the one"
+              echo "to watch for a green check."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit 1
+
+      - name: Report (fork PR or push event)
+        if: |
+          steps.apply.outputs.result == 'dirty' &&
+          (github.event_name == 'push' ||
+           (github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name != github.repository))
+        run: |
+          {
+              echo "## clang-format check failed"
+              echo ""
+              echo "The auto-fix path is only enabled for same-repo PRs."
+              echo "Run locally and amend / push:"
+              echo ""
+              echo '```bash'
+              echo "find include src test -type f \\"
+              echo "    \\( -name '*.h' -o -name '*.cxx' -o -name '*.cpp' -o -name '*.hpp' \\) \\"
+              echo "    -not -path '*/build/*' \\"
+              echo "    -print0 | xargs -0 clang-format -i --style=file"
+              echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+  #  ── Read-only gate ──────────────────────────────────────────────────
+  #  The REQUIRED status check.  Never pushes, never fixes — just verifies.
+  format-gate:
+    name: clang-format gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+
+      - name: Install clang-format
+        run: |
+          pipx install "clang-format==22.1.5"
+          clang-format --version
+
+      - name: Verify formatting (read-only, fail on diff)
+        run: |
+          set -e
+          mapfile -d '' files < <(find include src test -type f \
+              \( -name '*.h' -o -name '*.cxx' -o -name '*.cpp' -o -name '*.hpp' \) \
+              -not -path '*/build/*' -print0)
+          echo "Checking ${#files[@]} source files (dry-run)."
+          clang-format --dry-run -Werror --style=file "${files[@]}"

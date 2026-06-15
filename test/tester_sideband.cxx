@@ -13,31 +13,41 @@
 
 namespace st = mist::stats;
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) { std::printf("  FAIL: %s\n", what); ++failures; }
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
+        std::printf("  FAIL: %s\n", what);
+        ++failures;
+    }
 }
 
-void check_close(double got, double want, double tol, const char* what) {
-    if (std::fabs(got - want) > tol) {
+void check_close(double got, double want, double tol, const char *what)
+{
+    if (std::fabs(got - want) > tol)
+    {
         std::printf("  FAIL: %s — got %.6g, want %.6g\n", what, got, want);
         ++failures;
     }
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     // 20 bins, x_min=0, bin_width=1. Peak window [9, 10.5] selects bins 9,10;
     // half = 0.75 -> outer [8.25, 11.25] selects bins 8..11; wings = bins 8,11.
 
     std::puts("[tester_sideband] pure signal, no background");
     {
         std::vector<double> c(20, 0.0);
-        c[9] = 50.0; c[10] = 50.0;
+        c[9] = 50.0;
+        c[10] = 50.0;
         const auto r = st::sideband_subtract(c, 0.0, 1.0, 9.0, 10.5);
         check(r.ok, "ok");
         check_close(r.peak, 100.0, 1e-9, "peak = 100");
@@ -48,7 +58,7 @@ int main() {
 
     std::puts("[tester_sideband] flat background, no signal");
     {
-        std::vector<double> c(20, 4.0);  // flat
+        std::vector<double> c(20, 4.0); // flat
         const auto r = st::sideband_subtract(c, 0.0, 1.0, 9.0, 10.5);
         // peak bins 9,10 = 8; outer bins 8..11 = 16; background = 8; signal = 0.
         check_close(r.peak, 8.0, 1e-9, "peak = 8");
@@ -60,7 +70,8 @@ int main() {
     std::puts("[tester_sideband] signal over flat background");
     {
         std::vector<double> c(20, 4.0);
-        c[9] += 20.0; c[10] += 20.0;  // inject 40 of signal
+        c[9] += 20.0;
+        c[10] += 20.0; // inject 40 of signal
         const auto r = st::sideband_subtract(c, 0.0, 1.0, 9.0, 10.5);
         // peak = 24+24 = 48; outer = 48 + 4 + 4 = 56; background = 8; signal = 40.
         check_close(r.peak, 48.0, 1e-9, "peak = 48");
@@ -88,7 +99,8 @@ int main() {
         check(!st::sideband_subtract(c, 0.0, 1.0, 6.0, 2.0).ok, "inverted window -> not ok");
     }
 
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_sideband] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }

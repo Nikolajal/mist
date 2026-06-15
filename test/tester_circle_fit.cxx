@@ -3,7 +3,7 @@
 // tester_circle_fit.cxx — exercises mist::ring_finding::circle_fit.
 
 #include <mist/ring_finding/circle_fit.h>
-#include <mist/ring_finding/hough_transform.h>  // for the Hit POD (Point2 interop)
+#include <mist/ring_finding/hough_transform.h> // for the Hit POD (Point2 interop)
 
 #include <cmath>
 #include <cstdio>
@@ -13,37 +13,51 @@
 
 namespace rf = mist::ring_finding;
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) { std::printf("  FAIL: %s\n", what); ++failures; }
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
+        std::printf("  FAIL: %s\n", what);
+        ++failures;
+    }
 }
 
-void check_close(double got, double want, double tol, const char* what) {
-    if (std::fabs(got - want) > tol) {
+void check_close(double got, double want, double tol, const char *what)
+{
+    if (std::fabs(got - want) > tol)
+    {
         std::printf("  FAIL: %s — got %.6g, want %.6g\n", what, got, want);
         ++failures;
     }
 }
 
-struct P { double x, y; };
+struct P
+{
+    double x, y;
+};
 
 // Sample n points on the circle (cx, cy, r), optionally over a partial arc.
 std::vector<P> ring(double cx, double cy, double r, int n,
-                    double a0 = 0.0, double a1 = 2.0 * std::numbers::pi) {
+                    double a0 = 0.0, double a1 = 2.0 * std::numbers::pi)
+{
     std::vector<P> pts;
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; ++i)
+    {
         const double a = a0 + (a1 - a0) * i / n;
         pts.push_back({cx + r * std::cos(a), cy + r * std::sin(a)});
     }
     return pts;
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     std::puts("[tester_circle_fit] exact circle");
     {
         const auto pts = ring(3.0, -2.0, 5.0, 64);
@@ -70,7 +84,7 @@ int main() {
     std::puts("[tester_circle_fit] minimal + degenerate");
     {
         // Exactly three non-collinear points: unique circle.
-        std::vector<P> tri = {{1, 0}, {0, 1}, {-1, 0}};  // unit circle, centre 0
+        std::vector<P> tri = {{1, 0}, {0, 1}, {-1, 0}}; // unit circle, centre 0
         const auto fit = rf::circle_fit(tri);
         check(fit.ok, "3 points: ok");
         check_close(fit.radius, 1.0, 1e-9, "3 points: radius 1");
@@ -95,8 +109,9 @@ int main() {
         // Perturb a ring slightly and check the recovered params are near.
         auto pts = ring(2.0, 5.0, 8.0, 200);
         // deterministic small wobble, no RNG dependency
-        for (std::size_t i = 0; i < pts.size(); ++i) {
-            const double e = (static_cast<int>(i % 5) - 2) * 0.01;  // in [-0.02, 0.02]
+        for (std::size_t i = 0; i < pts.size(); ++i)
+        {
+            const double e = (static_cast<int>(i % 5) - 2) * 0.01; // in [-0.02, 0.02]
             pts[i].x += e;
             pts[i].y -= e;
         }
@@ -112,7 +127,8 @@ int main() {
     std::puts("[tester_circle_fit] Hit interop");
     {
         std::vector<rf::Hit> hits;
-        for (const auto& p : ring(1.0, 1.0, 4.0, 20)) {
+        for (const auto &p : ring(1.0, 1.0, 4.0, 20))
+        {
             rf::Hit h{};
             h.x = static_cast<float>(p.x);
             h.y = static_cast<float>(p.y);
@@ -127,8 +143,9 @@ int main() {
     // is a strong check on the characteristic-polynomial coefficients (a wrong
     // coefficient would not reproduce the exact centre/radius).
     std::puts("[tester_circle_fit] taubin / pratt exact recovery");
-    for (auto method : {rf::circle_method::taubin, rf::circle_method::pratt}) {
-        const char* nm = (method == rf::circle_method::taubin) ? "taubin" : "pratt";
+    for (auto method : {rf::circle_method::taubin, rf::circle_method::pratt})
+    {
+        const char *nm = (method == rf::circle_method::taubin) ? "taubin" : "pratt";
         const auto pts = ring(-4.0, 7.0, 12.0, 50);
         const auto fit = rf::circle_fit(pts, method);
         check(fit.ok, nm);
@@ -156,7 +173,8 @@ int main() {
         check(std::fabs(t.radius - p.radius) < 1e-6, "taubin ~ pratt radius");
     }
 
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_circle_fit] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }

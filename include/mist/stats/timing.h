@@ -27,7 +27,7 @@
 
 namespace mist::stats
 {
-    /**
+/**
      * @brief Geometric acceptance of a same-frame time difference.
      *
      * For two times drawn uniformly within a frame of length @p frame_length,
@@ -48,28 +48,28 @@ namespace mist::stats
      * @return Acceptance in @f$[0, 1]@f$: 0 for @f$|dt| \ge L@f$ or invalid
      *         @p frame_length, else @f$\max(\text{floor}, (L-|dt|)/L)@f$.
      */
-    [[nodiscard]] inline double
-    triangle_acceptance(double dt, double frame_length, double floor = 0.01)
-    {
-        if (!(frame_length > 0.0))
-            return 0.0;
-        const double abs_dt = std::fabs(dt);
-        if (abs_dt >= frame_length)
-            return 0.0;
-        const double accept = (frame_length - abs_dt) / frame_length;
-        return accept > floor ? accept : floor;
-    }
+[[nodiscard]] inline double
+triangle_acceptance(double dt, double frame_length, double floor = 0.01)
+{
+    if (!(frame_length > 0.0))
+        return 0.0;
+    const double abs_dt = std::fabs(dt);
+    if (abs_dt >= frame_length)
+        return 0.0;
+    const double accept = (frame_length - abs_dt) / frame_length;
+    return accept > floor ? accept : floor;
+}
 
-    /**
+/**
      * @brief Result of a Poisson-rate estimate.
      */
-    struct rate_result
-    {
-        double rate = 0.0; ///< Estimated rate @f$\hat\lambda@f$ (inverse Δt units).
-        bool ok = false;   ///< False on empty input or non-positive mean interval.
-    };
+struct rate_result
+{
+    double rate = 0.0; ///< Estimated rate @f$\hat\lambda@f$ (inverse Δt units).
+    bool ok = false;   ///< False on empty input or non-positive mean interval.
+};
 
-    /**
+/**
      * @brief Maximum-likelihood Poisson rate from consecutive-interval samples.
      *
      * The Δt between consecutive firings of a Poisson process of rate
@@ -85,21 +85,21 @@ namespace mist::stats
      * @note To convert to Hz when intervals are in nanoseconds, multiply the
      *       returned rate by @f$10^9@f$.
      */
-    [[nodiscard]] inline rate_result
-    poisson_rate_mle(std::span<const double> intervals)
-    {
-        rate_result result;
-        if (intervals.empty())
-            return result;
-        double sum = 0.0;
-        for (double dt : intervals)
-            sum += dt;
-        const double mean = sum / static_cast<double>(intervals.size());
-        if (!(mean > 0.0) || !std::isfinite(mean))
-            return result;
-        result.rate = 1.0 / mean;
-        result.ok = true;
+[[nodiscard]] inline rate_result
+poisson_rate_mle(std::span<const double> intervals)
+{
+    rate_result result;
+    if (intervals.empty())
         return result;
-    }
+    double sum = 0.0;
+    for (double dt : intervals)
+        sum += dt;
+    const double mean = sum / static_cast<double>(intervals.size());
+    if (!(mean > 0.0) || !std::isfinite(mean))
+        return result;
+    result.rate = 1.0 / mean;
+    result.ok = true;
+    return result;
+}
 
 } // namespace mist::stats

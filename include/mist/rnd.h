@@ -18,7 +18,7 @@
 
 namespace mist
 {
-    /**
+/**
      * @brief Random number generator wrapper with convenient distributions.
      *
      * Provides:
@@ -42,33 +42,33 @@ namespace mist
      * int    z = rng.poisson(5);        // Poisson(λ=5)
      * @endcode
      */
-    class [[nodiscard]] Rnd
-    {
-    public:
-        using Engine = std::mt19937;
+class [[nodiscard]] Rnd
+{
+public:
+    using Engine = std::mt19937;
 
-        // ------------------------------------------------------------------
-        // Constructors
-        // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Constructors
+    // ------------------------------------------------------------------
 
-        /// Non-deterministic seed via std::random_device.
-        Rnd() : gen_(std::random_device{}()) {}
+    /// Non-deterministic seed via std::random_device.
+    Rnd() : gen_(std::random_device{}()) {}
 
-        /// Deterministic seed for reproducible sequences.
-        explicit Rnd(uint32_t seed) : gen_(seed) {}
+    /// Deterministic seed for reproducible sequences.
+    explicit Rnd(uint32_t seed) : gen_(seed) {}
 
-        /**
+    /**
          * @brief Reseed the engine.
          * @warning Resets the random sequence; breaks reproducibility if
          *          called mid-run.
          */
-        void reseed(uint32_t seed) { gen_.seed(seed); }
+    void reseed(uint32_t seed) { gen_.seed(seed); }
 
-        // ------------------------------------------------------------------
-        // Discrete distributions
-        // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Discrete distributions
+    // ------------------------------------------------------------------
 
-        /**
+    /**
          * @brief Sample from Poisson(λ).
          *
          * @param lambda Mean of the distribution. Must be > 0.
@@ -79,19 +79,19 @@ namespace mist
          * @note  Integer literals convert implicitly (e.g. @c rng.poisson(5)
          *        still works), so existing call sites need no changes.
          */
-        [[nodiscard]] int poisson(double lambda)
-        {
-            if (!(lambda > 0.0))
-                throw std::invalid_argument("Poisson lambda must be > 0");
-            std::poisson_distribution<int> dist(lambda);
-            return dist(gen_);
-        }
+    [[nodiscard]] int poisson(double lambda)
+    {
+        if (!(lambda > 0.0))
+            throw std::invalid_argument("Poisson lambda must be > 0");
+        std::poisson_distribution<int> dist(lambda);
+        return dist(gen_);
+    }
 
-        // ------------------------------------------------------------------
-        // Continuous distributions
-        // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Continuous distributions
+    // ------------------------------------------------------------------
 
-        /**
+    /**
          * @brief Sample from Uniform[start, end).
          * @tparam T Floating-point type (float, double, long double).
          * @param start Inclusive lower bound (default 0).
@@ -107,49 +107,49 @@ namespace mist
          * MUST pass @c start<=end; release builds tolerate the violation, but
          * the tolerance is not promised beyond 1.x. See mist:D-01.
          */
-        template <std::floating_point T>
-        [[nodiscard]] T uniform(T start = T(0), T end = T(1))
-        {
-            assert(start <= end &&
-                   "mist::Rnd::uniform: start must be <= end "
-                   "(release builds silently swap; debug asserts)");
-            if (end < start)
-                std::swap(start, end);
-            std::uniform_real_distribution<T> dist(start, end);
-            return dist(gen_);
-        }
+    template <std::floating_point T>
+    [[nodiscard]] T uniform(T start = T(0), T end = T(1))
+    {
+        assert(start <= end &&
+               "mist::Rnd::uniform: start must be <= end "
+               "(release builds silently swap; debug asserts)");
+        if (end < start)
+            std::swap(start, end);
+        std::uniform_real_distribution<T> dist(start, end);
+        return dist(gen_);
+    }
 
-        /**
+    /**
          * @brief Sample from N(mean, stdv).
          * @tparam T Floating-point type.
          * @param mean Mean of the distribution (default 0).
          * @param stdv Standard deviation (default 1).
          */
-        template <std::floating_point T>
-        [[nodiscard]] T normal(T mean = T(0), T stdv = T(1))
-        {
-            std::normal_distribution<T> dist(mean, stdv);
-            return dist(gen_);
-        }
+    template <std::floating_point T>
+    [[nodiscard]] T normal(T mean = T(0), T stdv = T(1))
+    {
+        std::normal_distribution<T> dist(mean, stdv);
+        return dist(gen_);
+    }
 
-        // ------------------------------------------------------------------
-        // Convenience
-        // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Convenience
+    // ------------------------------------------------------------------
 
-        /**
+    /**
          * @brief Sample a random angle φ uniformly from [-π, π).
          * @return Angle in radians.
          */
-        [[nodiscard]] double generate_phi()
-        {
-            return uniform(-std::numbers::pi, std::numbers::pi);
-        }
+    [[nodiscard]] double generate_phi()
+    {
+        return uniform(-std::numbers::pi, std::numbers::pi);
+    }
 
-        // ------------------------------------------------------------------
-        // Engine access (escape hatch for hot loops)
-        // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Engine access (escape hatch for hot loops)
+    // ------------------------------------------------------------------
 
-        /**
+    /**
          * @brief Direct access to the underlying Mersenne-Twister engine.
          *
          * Most callers should use @ref uniform, @ref normal, @ref poisson
@@ -170,10 +170,10 @@ namespace mist
          *          Treat this exactly like any other member: one engine per
          *          thread (via @c thread_local Rnd).
          */
-        [[nodiscard]] Engine &engine() noexcept { return gen_; }
+    [[nodiscard]] Engine &engine() noexcept { return gen_; }
 
-    private:
-        Engine gen_; ///< Underlying Mersenne-Twister engine; reseeded via @ref reseed.
-    };
+private:
+    Engine gen_; ///< Underlying Mersenne-Twister engine; reseeded via @ref reseed.
+};
 
 } // namespace mist

@@ -10,7 +10,8 @@
 #include <cmath>
 #include <vector>
 
-namespace mist::algo {
+namespace mist::algo
+{
 
 // ---------------------------------------------------------------------------
 // log_binning: n_bins + 1 edges spanning [x_min, x_max], spaced evenly in
@@ -25,7 +26,8 @@ namespace mist::algo {
 log_binning(std::size_t n_bins, double x_min, double x_max)
 {
     std::vector<double> edges;
-    if (n_bins == 0 || !(x_min > 0.0) || !(x_max > x_min)) return edges;
+    if (n_bins == 0 || !(x_min > 0.0) || !(x_max > x_min))
+        return edges;
 
     const double log_lo = std::log10(x_min);
     const double log_hi = std::log10(x_max);
@@ -40,4 +42,4 @@ log_binning(std::size_t n_bins, double x_min, double x_max)
     return edges;
 }
 
-}  // namespace mist::algo
+} // namespace mist::algo

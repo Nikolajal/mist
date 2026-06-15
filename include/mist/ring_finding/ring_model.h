@@ -30,7 +30,7 @@
 
 namespace mist::ring_finding
 {
-    /**
+/**
      * @brief A logistic acceptance feature on the azimuthal-width profile.
      *
      * Models a localised dip/bump in the ring width centred at @c center,
@@ -38,31 +38,31 @@ namespace mist::ring_finding
      * peak contribution @c amplitude. Used to imprint acceptance-gap structure
      * (e.g. PDU boundaries) onto the otherwise constant ring width.
      */
-    struct logistic_feature
-    {
-        double amplitude = 0.0; ///< Peak contribution to the width.
-        double center = 0.0;    ///< Azimuthal centre of the feature [rad].
-        double width = 0.0;     ///< Azimuthal extent of the feature [rad].
-        double slope = 1.0;     ///< Logistic edge width (smaller ⇒ sharper).
-    };
+struct logistic_feature
+{
+    double amplitude = 0.0; ///< Peak contribution to the width.
+    double center = 0.0;    ///< Azimuthal centre of the feature [rad].
+    double width = 0.0;     ///< Azimuthal extent of the feature [rad].
+    double slope = 1.0;     ///< Logistic edge width (smaller ⇒ sharper).
+};
 
-    /**
+/**
      * @brief Parameters of the ring density model.
      *
      * Mirrors the six-parameter beam-test model
      * @f${x_0, y_0, R_0, \sigma_R, N_\gamma, b}@f$.
      */
-    struct ring_params
-    {
-        double x0 = 0.0;         ///< Ring centre x.
-        double y0 = 0.0;         ///< Ring centre y.
-        double radius = 0.0;     ///< Ring radius @f$R_0@f$.
-        double sigma = 1.0;      ///< Baseline radial width @f$\sigma_R@f$.
-        double photons = 1.0;    ///< Integrated photon yield @f$N_\gamma@f$.
-        double background = 0.0; ///< Flat background level @f$b@f$.
-    };
+struct ring_params
+{
+    double x0 = 0.0;         ///< Ring centre x.
+    double y0 = 0.0;         ///< Ring centre y.
+    double radius = 0.0;     ///< Ring radius @f$R_0@f$.
+    double sigma = 1.0;      ///< Baseline radial width @f$\sigma_R@f$.
+    double photons = 1.0;    ///< Integrated photon yield @f$N_\gamma@f$.
+    double background = 0.0; ///< Flat background level @f$b@f$.
+};
 
-    /**
+/**
      * @brief Difference of two logistics — a smooth "window" in @p phi.
      *
      * @f[
@@ -78,17 +78,17 @@ namespace mist::ring_finding
      * @param sigma_2    Width of the falling logistic @f$s_2@f$.
      * @return Window value at @p phi.
      */
-    [[nodiscard]] inline double
-    logistic_window(double phi, double amplitude,
-                    double center_1, double sigma_1,
-                    double center_2, double sigma_2)
-    {
-        return amplitude *
-               (1.0 / (1.0 + std::exp(-(phi - center_1) / sigma_1)) -
-                1.0 / (1.0 + std::exp(-(phi - center_2) / sigma_2)));
-    }
+[[nodiscard]] inline double
+logistic_window(double phi, double amplitude,
+                double center_1, double sigma_1,
+                double center_2, double sigma_2)
+{
+    return amplitude *
+           (1.0 / (1.0 + std::exp(-(phi - center_1) / sigma_1)) -
+            1.0 / (1.0 + std::exp(-(phi - center_2) / sigma_2)));
+}
 
-    /**
+/**
      * @brief Azimuthally-varying ring width @f$\sigma_R(\phi)@f$.
      *
      * A constant baseline plus one difference-of-logistic window per feature:
@@ -101,19 +101,19 @@ namespace mist::ring_finding
      * @param features        Optional logistic acceptance features.
      * @return Effective ring width at @p phi.
      */
-    [[nodiscard]] inline double
-    ring_sigma(double phi, double baseline_sigma,
-               const std::vector<logistic_feature> &features = {})
-    {
-        double result = baseline_sigma;
-        for (const auto &f : features)
-            result += logistic_window(phi, f.amplitude,
-                                      f.center - 0.5 * f.width, f.slope,
-                                      f.center + 0.5 * f.width, f.slope);
-        return result;
-    }
+[[nodiscard]] inline double
+ring_sigma(double phi, double baseline_sigma,
+           const std::vector<logistic_feature> &features = {})
+{
+    double result = baseline_sigma;
+    for (const auto &f : features)
+        result += logistic_window(phi, f.amplitude,
+                                  f.center - 0.5 * f.width, f.slope,
+                                  f.center + 0.5 * f.width, f.slope);
+    return result;
+}
 
-    /**
+/**
      * @brief Ring signal + flat background density in polar @f$(R, \phi)@f$.
      *
      * @f[
@@ -128,20 +128,20 @@ namespace mist::ring_finding
      * @param features  Optional azimuthal-gap features.
      * @return Expected density at @f$(R, \phi)@f$.
      */
-    [[nodiscard]] inline double
-    ring_density_polar(double r, double phi, const ring_params &p,
-                       const std::vector<logistic_feature> &features = {})
-    {
-        const double sigma = ring_sigma(phi, p.sigma, features);
-        const double norm = 1.0 / (std::numbers::sqrt2 *
-                                   std::sqrt(std::numbers::pi) * sigma);
-        const double z = (r - p.radius) / sigma;
-        const double gauss = norm * std::exp(-0.5 * z * z);
-        const double signal = p.photons * (1.0 / (2.0 * std::numbers::pi * p.radius)) * gauss;
-        return signal + p.background;
-    }
+[[nodiscard]] inline double
+ring_density_polar(double r, double phi, const ring_params &p,
+                   const std::vector<logistic_feature> &features = {})
+{
+    const double sigma = ring_sigma(phi, p.sigma, features);
+    const double norm = 1.0 / (std::numbers::sqrt2 *
+                               std::sqrt(std::numbers::pi) * sigma);
+    const double z = (r - p.radius) / sigma;
+    const double gauss = norm * std::exp(-0.5 * z * z);
+    const double signal = p.photons * (1.0 / (2.0 * std::numbers::pi * p.radius)) * gauss;
+    return signal + p.background;
+}
 
-    /**
+/**
      * @brief Ring density in Cartesian @f$(x, y)@f$.
      *
      * Converts @f$(x, y)@f$ to ring-centred polar coordinates and evaluates
@@ -153,18 +153,18 @@ namespace mist::ring_finding
      * @param features  Optional azimuthal-gap features.
      * @return Expected density at @f$(x, y)@f$.
      */
-    [[nodiscard]] inline double
-    ring_density_xy(double x, double y, const ring_params &p,
-                    const std::vector<logistic_feature> &features = {})
-    {
-        const double dx = x - p.x0;
-        const double dy = y - p.y0;
-        const double r = std::hypot(dx, dy);
-        const double phi = std::atan2(dy, dx);
-        return ring_density_polar(r, phi, p, features);
-    }
+[[nodiscard]] inline double
+ring_density_xy(double x, double y, const ring_params &p,
+                const std::vector<logistic_feature> &features = {})
+{
+    const double dx = x - p.x0;
+    const double dy = y - p.y0;
+    const double r = std::hypot(dx, dy);
+    const double phi = std::atan2(dy, dx);
+    return ring_density_polar(r, phi, p, features);
+}
 
-    /**
+/**
      * @brief Cartesian contour points of the ring at a given σ level.
      *
      * Traces @f$R_0 + k\,\sigma_R(\phi)@f$ around @f$\phi \in [-\pi, \pi]@f$ at
@@ -179,26 +179,25 @@ namespace mist::ring_finding
      *                     polyline has @c n_points + 1 entries (closed loop).
      * @return @c {x, y} contour points, empty if @p n_points is 0.
      */
-    [[nodiscard]] inline std::vector<std::array<double, 2>>
-    ring_contour(const ring_params &p, double sigma_level,
-                 const std::vector<logistic_feature> &features = {},
-                 std::size_t n_points = 500)
-    {
-        std::vector<std::array<double, 2>> points;
-        if (n_points == 0)
-            return points;
-        points.reserve(n_points + 1);
-        constexpr double pi = std::numbers::pi;
-        for (std::size_t i = 0; i <= n_points; ++i)
-        {
-            const double phi = -pi + 2.0 * pi * (static_cast<double>(i) /
-                                                 static_cast<double>(n_points));
-            const double rr = p.radius +
-                              sigma_level * ring_sigma(phi, p.sigma, features);
-            points.push_back({p.x0 + rr * std::cos(phi),
-                              p.y0 + rr * std::sin(phi)});
-        }
+[[nodiscard]] inline std::vector<std::array<double, 2>>
+ring_contour(const ring_params &p, double sigma_level,
+             const std::vector<logistic_feature> &features = {},
+             std::size_t n_points = 500)
+{
+    std::vector<std::array<double, 2>> points;
+    if (n_points == 0)
         return points;
+    points.reserve(n_points + 1);
+    constexpr double pi = std::numbers::pi;
+    for (std::size_t i = 0; i <= n_points; ++i)
+    {
+        const double phi = -pi + 2.0 * pi * (static_cast<double>(i) / static_cast<double>(n_points));
+        const double rr = p.radius +
+                          sigma_level * ring_sigma(phi, p.sigma, features);
+        points.push_back({p.x0 + rr * std::cos(phi),
+                          p.y0 + rr * std::sin(phi)});
     }
+    return points;
+}
 
 } // namespace mist::ring_finding

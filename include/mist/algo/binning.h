@@ -33,7 +33,8 @@
 #include <ranges>
 #include <vector>
 
-namespace mist::algo {
+namespace mist::algo
+{
 
 // ---------------------------------------------------------------------------
 // block_mean
@@ -48,21 +49,26 @@ block_mean(InputIt first, InputIt last,
 {
     using T = typename std::iterator_traits<InputIt>::value_type;
     std::vector<T> out;
-    if (n == 0) return out;
+    if (n == 0)
+        return out;
 
     const auto size = static_cast<std::size_t>(std::distance(first, last));
-    if (n > size) return out;
+    if (n > size)
+        return out;
 
     out.reserve(size / n + (drop_partial ? 0 : 1));
 
     auto it = first;
-    while (it != last) {
+    while (it != last)
+    {
         const auto remaining = static_cast<std::size_t>(std::distance(it, last));
         const std::size_t block = std::min(n, remaining);
-        if (block < n && drop_partial) break;
+        if (block < n && drop_partial)
+            break;
 
         T acc = T(0);
-        for (std::size_t i = 0; i < block; ++i, ++it) acc += *it;
+        for (std::size_t i = 0; i < block; ++i, ++it)
+            acc += *it;
         out.push_back(acc / static_cast<T>(block));
     }
     return out;
@@ -71,7 +77,7 @@ block_mean(InputIt first, InputIt last,
 template <std::ranges::input_range R>
     requires std::floating_point<std::ranges::range_value_t<R>>
 [[nodiscard]] auto
-block_mean(R&& r, std::size_t n, bool drop_partial = false)
+block_mean(R &&r, std::size_t n, bool drop_partial = false)
 {
     return block_mean(std::ranges::begin(r), std::ranges::end(r), n, drop_partial);
 }
@@ -93,27 +99,33 @@ block_rms(InputIt first, InputIt last,
 {
     using T = typename std::iterator_traits<InputIt>::value_type;
     std::vector<T> out;
-    if (n == 0) return out;
+    if (n == 0)
+        return out;
 
     const auto size = static_cast<std::size_t>(std::distance(first, last));
-    if (n > size) return out;
+    if (n > size)
+        return out;
 
     out.reserve(size / n + (drop_partial ? 0 : 1));
 
     auto it = first;
-    while (it != last) {
+    while (it != last)
+    {
         const auto remaining = static_cast<std::size_t>(std::distance(it, last));
         const std::size_t block = std::min(n, remaining);
-        if (block < n && drop_partial) break;
+        if (block < n && drop_partial)
+            break;
 
         // Two-pass: mean, then variance about the mean.
         auto block_first = it;
         T mean_acc = T(0);
-        for (std::size_t i = 0; i < block; ++i, ++it) mean_acc += *it;
+        for (std::size_t i = 0; i < block; ++i, ++it)
+            mean_acc += *it;
         const T mean = mean_acc / static_cast<T>(block);
 
         T var_acc = T(0);
-        for (std::size_t i = 0; i < block; ++i, ++block_first) {
+        for (std::size_t i = 0; i < block; ++i, ++block_first)
+        {
             const T d = *block_first - mean;
             var_acc += d * d;
         }
@@ -125,9 +137,9 @@ block_rms(InputIt first, InputIt last,
 template <std::ranges::input_range R>
     requires std::floating_point<std::ranges::range_value_t<R>>
 [[nodiscard]] auto
-block_rms(R&& r, std::size_t n, bool drop_partial = false)
+block_rms(R &&r, std::size_t n, bool drop_partial = false)
 {
     return block_rms(std::ranges::begin(r), std::ranges::end(r), n, drop_partial);
 }
 
-}  // namespace mist::algo
+} // namespace mist::algo

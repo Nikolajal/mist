@@ -18,37 +18,46 @@
 
 namespace a = mist::algo;
 
-namespace {
+namespace
+{
 
 int failures = 0;
 
-void check(bool cond, const char* what) {
-    if (!cond) {
+void check(bool cond, const char *what)
+{
+    if (!cond)
+    {
         std::printf("  FAIL: %s\n", what);
         ++failures;
     }
 }
 
-void check_close(double got, double want, double tol, const char* what) {
-    if (std::fabs(got - want) > tol) {
+void check_close(double got, double want, double tol, const char *what)
+{
+    if (std::fabs(got - want) > tol)
+    {
         std::printf("  FAIL: %s — got %.6g, want %.6g (tol %.3g)\n",
                     what, got, want, tol);
         ++failures;
     }
 }
 
-void check_vec_close(const std::vector<double>& got,
-                     const std::vector<double>& want,
+void check_vec_close(const std::vector<double> &got,
+                     const std::vector<double> &want,
                      double tol,
-                     const char* what) {
-    if (got.size() != want.size()) {
+                     const char *what)
+{
+    if (got.size() != want.size())
+    {
         std::printf("  FAIL: %s — size %zu vs %zu\n",
                     what, got.size(), want.size());
         ++failures;
         return;
     }
-    for (std::size_t i = 0; i < got.size(); ++i) {
-        if (std::fabs(got[i] - want[i]) > tol) {
+    for (std::size_t i = 0; i < got.size(); ++i)
+    {
+        if (std::fabs(got[i] - want[i]) > tol)
+        {
             std::printf("  FAIL: %s[%zu] — got %.6g, want %.6g\n",
                         what, i, got[i], want[i]);
             ++failures;
@@ -56,9 +65,10 @@ void check_vec_close(const std::vector<double>& got,
     }
 }
 
-}  // namespace
+} // namespace
 
-int main() {
+int main()
+{
     // ------------------------------------------------------------------
     std::puts("[tester_algo] block_mean");
 
@@ -223,7 +233,8 @@ int main() {
     check(a::log_binning(5, 10.0, 1.0).empty(), "log_binning: x_max<=x_min -> empty");
 
     // ------------------------------------------------------------------
-    if (failures) {
+    if (failures)
+    {
         std::printf("[tester_algo] %d failure(s)\n", failures);
         return EXIT_FAILURE;
     }
