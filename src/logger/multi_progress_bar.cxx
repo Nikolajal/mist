@@ -106,9 +106,8 @@ void MultiProgressBar::render_line() const
 {
     // Called by redraw_all() — cursor already positioned by erase_all().
     // The registry mutex is held by the caller; we add this bar's own
-    // mutex briefly to read state consistently (B4 fix: previously
-    // _draw_locked was reached with no mutex_ held, racing with subtask
-    // updates).
+    // mutex briefly so state reads inside _draw_locked don't race with
+    // concurrent subtask updates.
     std::lock_guard<std::mutex> lk(mutex_);
     if (!active_ || last_line_count_ == 0)
         return;
@@ -235,7 +234,7 @@ void MultiProgressBar::_draw_locked()
 {
     // On a non-TTY destination, suppress the entire multi-bar block so
     // log files / piped output stay free of cursor-control escapes and
-    // ANSI sequences (B7 fix).
+    // ANSI sequences.
     if (!is_tty())
         return;
 
@@ -260,9 +259,8 @@ void MultiProgressBar::_draw_locked()
 
     if (n > 0)
     {
-        const int tw = _terminal_width();
         out += "\n";
-        _emit_line(out, "\033[2m  ─── subtasks ───\033[0m", tw);
+        _emit_line(out, "\033[2m  ─── subtasks ───\033[0m");
         for (auto &s : subtasks_)
         {
             out += "\n";
@@ -279,7 +277,7 @@ void MultiProgressBar::_draw_locked()
 // =========================================================================
 
 // ─────────────────────────────────────────────────────────────────────────
-// Subtask callback notes (B5):
+// Subtask callback notes:
 //
 // The anchor operations (erase_all / redraw_all) acquire the global
 // registry mutex.  Lock order across the codebase is registry → bar; the
@@ -627,8 +625,7 @@ void MultiProgressBar::_render_subtask(std::string &out,
 // =========================================================================
 
 void MultiProgressBar::_emit_line(std::string &out,
-                                  const std::string &line,
-                                  int /*term_width*/)
+                                  const std::string &line)
 {
     out += "\033[2K\r";
     out += line;

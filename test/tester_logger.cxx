@@ -14,8 +14,10 @@
 
 #include <cassert>
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <thread>
 
 // ---------------------------------------------------------------------------
@@ -599,6 +601,44 @@ void test_done_output()
     mist::logger::set_min_level(mist::logger::LevelTag::Debug);
 }
 
+void test_set_log_file()
+{
+    const char *tmp = "tester_logger_file_sink.log";
+    std::remove(tmp);
+
+    mist::logger::set_log_file(tmp);
+    {
+        capture_streams cap;
+        mist::logger::set_min_level(mist::logger::LevelTag::Debug);
+        mist::logger::info("file-sink info");
+        mist::logger::warning("file-sink warning");
+        mist::logger::debug("file-sink debug");
+        mist::logger::end_update("nonexistent"); // no-op, must not crash
+    }
+    mist::logger::set_log_file(""); // close the sink
+
+    std::ifstream f(tmp);
+    CHECK(f.is_open());
+    const std::string content((std::istreambuf_iterator<char>(f)),
+                              std::istreambuf_iterator<char>());
+    f.close();
+
+    CHECK(content.find("file-sink info") != std::string::npos);
+    CHECK(content.find("file-sink warning") != std::string::npos);
+    CHECK(content.find("file-sink debug") != std::string::npos);
+    // File output must carry level prefix
+    CHECK(content.find("[INFO]") != std::string::npos);
+    CHECK(content.find("[WARNING]") != std::string::npos);
+    CHECK(content.find("[DEBUG]") != std::string::npos);
+    // File output must be ANSI-free
+    CHECK(content.find("\033[") == std::string::npos);
+
+    // Calling set_log_file("") on already-closed sink must be a no-op.
+    mist::logger::set_log_file("");
+
+    std::remove(tmp);
+}
+
 void test_scoped_cout_to_mist()
 {
     {
@@ -663,6 +703,7 @@ int main()
     test_format_overloads();
     test_done_output();
     test_scoped_cout_to_mist();
+    test_set_log_file();
 
     std::cout << s_tests_run << " tests run, "
               << s_tests_failed << " failed.\n";

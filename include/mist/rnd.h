@@ -4,6 +4,7 @@
 #include <concepts>
 #include <numbers>
 #include <random>
+#include <span>
 #include <stdexcept>
 
 /**
@@ -129,6 +130,46 @@ public:
     [[nodiscard]] T normal(T mean = T(0), T stdv = T(1))
     {
         std::normal_distribution<T> dist(mean, stdv);
+        return dist(gen_);
+    }
+
+    // ------------------------------------------------------------------
+    // Continuous distributions (continued)
+    // ------------------------------------------------------------------
+
+    /**
+         * @brief Sample from Exponential(rate).
+         * @tparam T Floating-point type.
+         * @param rate Rate parameter λ (mean = 1/λ). Must be > 0.
+         */
+    template <std::floating_point T>
+    [[nodiscard]] T exponential(double rate = 1.0)
+    {
+        if (!(rate > 0.0))
+            throw std::invalid_argument("Exponential rate must be > 0");
+        std::exponential_distribution<T> dist(static_cast<T>(rate));
+        return dist(gen_);
+    }
+
+    // ------------------------------------------------------------------
+    // Discrete distributions (continued)
+    // ------------------------------------------------------------------
+
+    /**
+         * @brief Sample an index from a discrete distribution.
+         * @param weights Non-negative weights (need not sum to 1).
+         * @return Index in [0, weights.size()).
+         */
+    [[nodiscard]] int discrete(std::initializer_list<double> weights)
+    {
+        std::discrete_distribution<int> dist(weights);
+        return dist(gen_);
+    }
+
+    /// @brief Span overload of @ref discrete.
+    [[nodiscard]] int discrete(std::span<const double> weights)
+    {
+        std::discrete_distribution<int> dist(weights.begin(), weights.end());
         return dist(gen_);
     }
 

@@ -366,7 +366,7 @@ private:
     void _render_subtask(std::string &out, const SubtaskProgressBar &s) const;
 
     /// @brief Append @p line followed by a terminal-clear escape to @p out.
-    static void _emit_line(std::string &out, const std::string &line, int term_width);
+    static void _emit_line(std::string &out, const std::string &line);
 
     /// @brief Best-effort terminal column count; falls back to 80.
     [[nodiscard]] static int _terminal_width();

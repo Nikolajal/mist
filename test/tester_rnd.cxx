@@ -251,6 +251,100 @@ void test_generate_phi_range()
 }
 
 // ---------------------------------------------------------------------------
+// exponential — mean ≈ 1/rate; all samples > 0.
+// ---------------------------------------------------------------------------
+
+void test_exponential_positive()
+{
+    mist::Rnd r(55);
+    for (int i = 0; i < 500; ++i)
+        CHECK(r.exponential<double>() > 0.0);
+}
+
+void test_exponential_mean()
+{
+    mist::Rnd r(123);
+    constexpr int N = 200'000;
+    constexpr double rate = 2.5;
+    double sum = 0.0;
+    for (int i = 0; i < N; ++i)
+        sum += r.exponential<double>(rate);
+    // mean = 1/rate; sigma of sample mean = 1/(rate*sqrt(N)).  5-sigma window.
+    CHECK_NEAR(sum / N, 1.0 / rate, 5.0 / (rate * std::sqrt(static_cast<double>(N))));
+}
+
+// ---------------------------------------------------------------------------
+// discrete — samples in [0, weights.size()); proportions match weights.
+// ---------------------------------------------------------------------------
+
+void test_discrete_range()
+{
+    mist::Rnd r(77);
+    std::vector<double> w = {1.0, 2.0, 3.0};
+    for (int i = 0; i < 500; ++i)
+    {
+        const int x = r.discrete(std::span<const double>(w));
+        CHECK(x >= 0 && x < 3);
+    }
+}
+
+void test_discrete_proportions()
+{
+    mist::Rnd r(88);
+    constexpr int N = 300'000;
+    // weights {1,1,1} → each index equally likely.
+    int counts[3] = {};
+    for (int i = 0; i < N; ++i)
+        ++counts[r.discrete({1.0, 1.0, 1.0})];
+    for (int k = 0; k < 3; ++k)
+        CHECK_NEAR(counts[k] / static_cast<double>(N), 1.0 / 3.0, 5e-3);
+}
+
+// ---------------------------------------------------------------------------
+// exponential — reject rate <= 0 (mirrors poisson guard).
+// ---------------------------------------------------------------------------
+
+void test_exponential_rejects_invalid_rate()
+{
+    mist::Rnd r(1);
+    bool threw_zero = false, threw_neg = false;
+    try
+    {
+        (void)r.exponential<double>(0.0);
+    }
+    catch (const std::invalid_argument &)
+    {
+        threw_zero = true;
+    }
+    try
+    {
+        (void)r.exponential<double>(-3.0);
+    }
+    catch (const std::invalid_argument &)
+    {
+        threw_neg = true;
+    }
+    CHECK(threw_zero);
+    CHECK(threw_neg);
+}
+
+// ---------------------------------------------------------------------------
+// engine() — escape hatch returns a usable Mersenne-Twister reference.
+// ---------------------------------------------------------------------------
+
+void test_rnd_engine_access()
+{
+    mist::Rnd r(42);
+    std::uniform_real_distribution<float> dist(0.f, 1.f);
+    const float x = dist(r.engine());
+    CHECK(x >= 0.f && x < 1.f);
+    // Seeding through the reference must affect future Rnd calls.
+    r.engine().seed(42);
+    mist::Rnd r2(42);
+    CHECK(r.uniform(0.0, 1.0) == r2.uniform(0.0, 1.0));
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -270,6 +364,12 @@ int main()
     test_poisson_mean();
     test_poisson_rejects_invalid_lambda();
     test_generate_phi_range();
+    test_exponential_positive();
+    test_exponential_mean();
+    test_exponential_rejects_invalid_rate();
+    test_discrete_range();
+    test_discrete_proportions();
+    test_rnd_engine_access();
 
     std::cout << s_tests_run << " tests run, "
               << s_tests_failed << " failed.\n";

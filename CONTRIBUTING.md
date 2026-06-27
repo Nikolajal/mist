@@ -14,7 +14,7 @@ mist follows [Semantic Versioning](https://semver.org/) with the
 
 | Phase | Contract |
 |---|---|
-| Pre-1.0 (current) | No backward-compatibility guarantees. Any release may break any consumer. Active development happens on the `dev` branch directly. Topic branches are encouraged but not required. |
+| Pre-1.0 (completed) | No backward-compatibility guarantees. Any release may break any consumer. Active development happened on the `dev` branch directly. |
 | Post-1.0 | Breaking changes require a major-version bump. Additive changes within `1.x` are permitted. Removal of any symbol requires at least one minor release with a `[[deprecated]]` notice first. The branching model below applies. |
 
 ## Branching model (effective at v1.0.0)

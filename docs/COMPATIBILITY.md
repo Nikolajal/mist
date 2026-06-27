@@ -48,11 +48,18 @@ Everything reachable through the headers in `include/mist/` is part of the
 public API. This includes:
 
 - All types and free functions in `mist::`, `mist::logger::`,
-  `mist::ring_finding::`, and `mist::algo::`.
+  `mist::ring_finding::`, `mist::algo::`, `mist::stats::`, and `mist::bits::`.
+  The free functions in `include/mist/io.h` (`read_csv`, `read_txt`,
+  `get<T>`, `get_column<T>`) and `include/mist/time.h` (`parse`,
+  `to_string`) are also part of the public API even though they do not live
+  in a named sub-namespace.
 - Public data members of public types (e.g. `ring_finding::Hit::x`,
   `ring_finding::FindRingsOptions::threshold_fraction`).
 - All `inline constexpr` named constants (`ring_finding::kDefaultCellSizeMm`,
-  `ring_finding::kDefaultCollectionRadiusMm`).
+  `ring_finding::kDefaultCollectionRadiusMm`, and the
+  `ring_finding::detail::kNewton*` / `kDetRelTol` constants in
+  `circle_fit.h` — though these live in `detail::` and are therefore
+  **not** part of the stability contract).
 - CMake target `mist::mist`, its `INTERFACE_COMPILE_FEATURES`, its
   `INTERFACE_INCLUDE_DIRECTORIES`, and the `find_package(mist X REQUIRED)`
   surface.

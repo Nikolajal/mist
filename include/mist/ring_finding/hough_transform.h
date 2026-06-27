@@ -201,10 +201,6 @@ class HoughTransform
 {
 public:
     // ================================================================
-    //  Constructors
-    // ================================================================
-
-    // ================================================================
     //  Backward-compatible aliases for the lifted constants.
     //  The canonical declarations now live at namespace scope (see
     //  ring_finding::kDefaultCellSizeMm / kDefaultCollectionRadiusMm);
@@ -326,7 +322,9 @@ public:
     [[nodiscard]] int get_nx() const { return nx_; }
     [[nodiscard]] int get_ny() const { return ny_; }
     [[nodiscard]] float get_x_min() const { return x_min_; }
+    [[nodiscard]] float get_x_max() const { return x_max_; }
     [[nodiscard]] float get_y_min() const { return y_min_; }
+    [[nodiscard]] float get_y_max() const { return y_max_; }
     [[nodiscard]] float get_cell_size() const { return cell_size_; }
 
     ///@}

@@ -6,6 +6,91 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.3.0] — algo/rnd/io expansion + Python bindings
+
+Additive only, fully backward-compatible (`SameMajorVersion`).
+
+### Added
+- **`mist::algo::weighted_block_mean`** (`include/mist/algo/binning.h`) — block
+  mean with per-element weights; returns `vector<T>`. Range overload included.
+  Companion to `block_mean` / `block_rms`.
+- **`mist::algo::ema`** (`include/mist/algo/smoothing.h`) — exponential moving
+  average with smoothing factor `alpha ∈ (0, 1]`. Iterator-pair + range overloads;
+  returns `vector<T>`.
+- **`mist::algo::gaussian_smooth`** (`include/mist/algo/smoothing.h`) — 1-D
+  Gaussian kernel convolution with width parameter `sigma` (in samples). Kernel
+  truncated at ±3σ. Iterator-pair + range overloads; returns `vector<T>`.
+- **`mist::algo::linspace`** (`include/mist/algo/edges.h`) — evenly-spaced bin
+  edges `[x_min, x_max]` with pinned endpoints; ROOT-free gap-filler until
+  `std::linspace` lands in C++26. Analogous to `log_binning` on a linear scale.
+- **`mist::algo::sign`** (`include/mist/algo/util.h`) — sign function returning
+  +1 / 0 / −1 for any arithmetic type; constexpr, concept-constrained.
+- **`mist::Rnd::exponential<T>(rate)`** (`include/mist/rnd.h`) — draws from an
+  exponential distribution with mean `1/rate`; rejects non-positive `rate` with
+  `std::invalid_argument`. Complements `uniform`, `normal`, `poisson`.
+- **`mist::Rnd::discrete(weights)`** (`include/mist/rnd.h`) — samples an integer
+  index from a discrete distribution given a weight list or `std::span<const
+  double>`.
+- **`mist::io::get<T>(table, col, row)`** / **`mist::io::get_column<T>(table,
+  col)`** (`include/mist/io.h`) — typed accessors for the `read_csv` /
+  `read_txt` column-keyed table. `get<T>` returns `T{}` for a missing column or
+  out-of-range row (never throws); `get_column<T>` returns an empty vector for a
+  missing column.
+- **`mist::logger::set_log_file(path)`** (`include/mist/logger/logger.h`) — route
+  all logger output to a plain-text (no ANSI) file in addition to the terminal;
+  opened in append mode. Pass `""` to close. Thread-safe (registry mutex).
+- **`mist::logger::done(msg, flush)` / `log(msg, ColourTag, styles, flush)`** —
+  `flush` parameter (default `true`) propagated to the free-colour log path and
+  the `done()` completion line, which previously had no flush control.
+- **`mist::ring_finding::HoughTransform::get_x_max()` / `get_y_max()`** — public
+  getters for the detector-extent upper bounds; `get_x_min()` / `get_y_min()`
+  were already exposed, completing the symmetric set.
+- **Python bindings** (`bindings/mist_ring.cpp`) — exposes the ring-finding
+  subsystem (`Hit`, `RingResult`, `HoughTransform` / `FindRingsOptions`,
+  `find_rings_ransac` / `RansacOptions`, `circle_fit` / `CircleFitResult` /
+  `circle_method`) to Python via pybind11. Enabled with `-DMIST_BUILD_PYTHON=ON`.
+  Import as `import mist_ring`.
+
+### Changed
+- **`mist::ring_finding::circle_fit` default method** changed from
+  `circle_method::kasa` to `circle_method::taubin`. Taubin is recommended in the
+  header documentation and has always been used by the RANSAC refiner; the
+  default now matches the guidance. Call sites that relied on the implicit `kasa`
+  default are unaffected if they pass the argument explicitly; unmarked call
+  sites now get Taubin.
+
+### Fixed
+- **`mist::Rnd::exponential<T>(rate)`** — missing guard on non-positive `rate`
+  caused `std::exponential_distribution` to invoke UB. Now throws
+  `std::invalid_argument` for `rate ≤ 0`.
+- **`mist::algo::block_rms`** — the iterator template was constrained to
+  `std::input_iterator` but the implementation traverses the range twice (once
+  for the mean, once for the RMS), which is UB for single-pass iterators. The
+  constraint has been tightened to `std::forward_iterator`.
+- **`mist::logger::log` file sink** — the file write occurred outside the
+  `log_print_guard` scope, introducing a data race with a concurrent
+  `set_log_file()` call on another thread. Moved inside the guard so the file
+  access is covered by the registry mutex.
+- **`HoughTransform::build_lut`** — calling `build_lut` with an empty
+  `index_to_hit_xy` map caused a dereference of a null iterator
+  (`std::sort`/`std::unique` on a zero-size container is UB in MSVC). Now
+  returns early with a warning.
+
+### Internal
+- Newton solver constants in `circle_fit.h` extracted to named constants
+  (`kNewtonMaxIter`, `kNewtonRelTol`, `kNewtonInitY`, `kDetRelTol`).
+- Orphaned audit-tag references (`B1`–`B13`) in logger and ring-finding sources
+  replaced with self-contained explanations.
+- Dead `int term_width` parameter removed from
+  `MultiProgressBar::_emit_line` — was suppressed with `/**/` and never
+  used after the renderer was simplified.
+- `HoughTransform::build_lut` log line converted to `std::format` overload.
+- Test coverage added: `test_exponential_rejects_invalid_rate`,
+  `test_rnd_engine_access`, `get<T>` / `get_column<T>` suite in `test_io`,
+  `test_set_log_file` in `test_logger`.
+
+---
+
 ## [1.2.0] — grid-free ring finding
 
 Additive only, fully backward-compatible (`SameMajorVersion`).
@@ -281,6 +366,8 @@ any symbol removal within 1.x, and the branching model documented in
 
 ---
 
+[1.3.0]: https://github.com/Nikolajal/mist/releases/tag/v1.3.0
+[1.2.0]: https://github.com/Nikolajal/mist/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Nikolajal/mist/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Nikolajal/mist/releases/tag/v1.0.0
 [0.1.0]: https://github.com/Nikolajal/mist/releases/tag/v0.1.0

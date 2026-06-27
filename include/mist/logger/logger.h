@@ -116,6 +116,19 @@ private:
 };
 
 // ------------------------------------------------------------------
+// File sink
+// ------------------------------------------------------------------
+
+/**
+     * @brief Route log output to a file in addition to the terminal.
+     *
+     * All subsequent @ref log calls write a plain-text (no ANSI codes) copy to
+     * @p path, opened in append mode. Pass an empty string to close the current
+     * file. Thread-safe — uses the existing registry mutex.
+     */
+void set_log_file(std::string_view path);
+
+// ------------------------------------------------------------------
 // Level filter
 // ------------------------------------------------------------------
 
@@ -154,13 +167,15 @@ void log(LevelTag tag, std::string_view msg, bool flush = true);
      * Bypasses the level filter — intended for one-off coloured output that
      * does not fit any predefined severity.
      *
-     * @param msg  Message text printed verbatim.
-     * @param c    Foreground colour to apply.
-     * @param s    Brace-enclosed list of style modifiers (default: @c NONE).
+     * @param msg    Message text printed verbatim.
+     * @param c      Foreground colour to apply.
+     * @param s      Brace-enclosed list of style modifiers (default: @c NONE).
+     * @param flush  If @c true (default), flush stdout after printing.
      */
 void log(std::string_view msg,
          ColourTag c,
-         std::initializer_list<StyleTag> s = {StyleTag::None});
+         std::initializer_list<StyleTag> s = {StyleTag::None},
+         bool flush = true);
 
 // ------------------------------------------------------------------
 // Convenience wrappers
@@ -250,18 +265,18 @@ inline void plain(std::format_string<Args...> fmt, Args &&...args)
      * Error→Debug severity ladder, so it intentionally does *not* introduce a
      * new @ref LevelTag; it reuses the free-colour path with a ✓ prefix.
      */
-inline void done(std::string_view msg)
+inline void done(std::string_view msg, bool flush = true)
 {
     log(std::string("✓ ") + std::string(msg),
-        ColourTag::BrightGreen, {StyleTag::Bold});
+        ColourTag::BrightGreen, {StyleTag::Bold}, flush);
 }
 
-/// @brief @c std::format overload of @ref done (requires >= 1 argument).
+/// @brief @c std::format overload of @ref done (requires >= 1 argument). Always flushes.
 template <class... Args>
     requires(sizeof...(Args) >= 1)
 inline void done(std::format_string<Args...> fmt, Args &&...args)
 {
-    done(std::string_view(std::format(fmt, std::forward<Args>(args)...)));
+    done(std::string_view(std::format(fmt, std::forward<Args>(args)...)), /*flush=*/true);
 }
 
 // ------------------------------------------------------------------

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
 project(mist
-    VERSION      1.2.0
+    VERSION      1.3.0
     DESCRIPTION  "MIST — Make It Simple, Toolkit"
     LANGUAGES    CXX
 )
@@ -98,6 +98,33 @@ install(FILES
 #   • Developers working on mist itself enable it explicitly:
 #       cmake -B build -DMIST_BUILD_TESTS=ON
 # ------------------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Python extension  (off by default)
+#
+# Requires pybind11 installed in the active Python environment:
+#   pip install pybind11
+# Then configure with:
+#   cmake -B build -DMIST_BUILD_PYTHON=ON
+# The resulting mist_ring.so can be imported directly from the build dir.
+# ------------------------------------------------------------------
+
+option(MIST_BUILD_PYTHON "Build mist Python extension module (mist_ring)" OFF)
+
+if(MIST_BUILD_PYTHON)
+    find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
+    execute_process(
+        COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
+        OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    find_package(pybind11 REQUIRED HINTS "${PYBIND11_CMAKE_DIR}")
+
+    pybind11_add_module(mist_ring bindings/mist_ring.cpp)
+    target_link_libraries(mist_ring PRIVATE mist::mist)
+    target_compile_features(mist_ring PRIVATE cxx_std_20)
+    message(STATUS "[mist] Python module mist_ring enabled")
+endif()
 
 option(MIST_BUILD_TESTS "Build mist test executables" OFF)
 

@@ -15,6 +15,7 @@
 #include <mist/logger/logger.h>
 #include <algorithm>
 #include <atomic>
+#include <fstream>
 #include <map>
 #include <optional>
 
@@ -189,6 +190,16 @@ static std::map<std::string, update_anchor_state> &_update_anchors()
 namespace
 {
 std::atomic<LevelTag> g_min_level{LevelTag::Debug};
+std::ofstream g_log_file;
+} // namespace
+
+void set_log_file(std::string_view path)
+{
+    auto lk = AnchorObject::registry_lock();
+    if (g_log_file.is_open())
+        g_log_file.close();
+    if (!path.empty())
+        g_log_file.open(std::string(path), std::ios::app);
 }
 
 void set_min_level(LevelTag level)
@@ -243,17 +254,52 @@ void log(LevelTag tag, std::string_view msg, bool flush)
     }
 
     {
-        log_print_guard guard; // erase anchors, print, redraw
+        log_print_guard guard; // erase anchors, print, redraw; holds registry lock
         out << styled_msg << '\n';
         if (flush)
             out << std::flush;
+        // File write is inside the lock to avoid a data race with set_log_file()
+        // closing/reopening g_log_file on another thread.
+        if (g_log_file.is_open())
+        {
+            std::string_view prefix;
+            switch (tag)
+            {
+            case LevelTag::Error:
+                prefix = "[ERROR]   ";
+                break;
+            case LevelTag::Warning:
+                prefix = "[WARNING] ";
+                break;
+            case LevelTag::Info:
+                prefix = "[INFO]    ";
+                break;
+            case LevelTag::Debug:
+                prefix = "[DEBUG]   ";
+                break;
+            default:
+                prefix = "";
+                break;
+            }
+            g_log_file << prefix << msg << '\n';
+            if (flush)
+                g_log_file << std::flush;
+        }
     }
 }
 
-void log(std::string_view msg, ColourTag c, std::initializer_list<StyleTag> s)
+void log(std::string_view msg, ColourTag c, std::initializer_list<StyleTag> s, bool flush)
 {
     log_print_guard guard;
     std::cout << ansi(c, s) << msg << ansi() << '\n';
+    if (flush)
+        std::cout << std::flush;
+    if (g_log_file.is_open())
+    {
+        g_log_file << msg << '\n';
+        if (flush)
+            g_log_file << std::flush;
+    }
 }
 
 // =========================================================================
@@ -323,6 +369,8 @@ void end_update(std::string update_name, bool flush)
               << "[" << update_name << "]"
               << ansi(ColourTag::BrightGreen, {StyleTag::None})
               << " " << last_msg << ansi() << '\n';
+    if (g_log_file.is_open())
+        g_log_file << "[" << update_name << "] " << last_msg << '\n';
     AnchorObject::redraw_all(); // redraws everything except the removed anchor
 
     if (flush)

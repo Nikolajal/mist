@@ -4,6 +4,7 @@
 
 #include <mist/io.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -85,6 +86,49 @@ int main()
     {
         const auto t = mist::io::read_csv("does_not_exist_xyz.csv");
         check(t.empty(), "missing file -> empty map");
+    }
+
+    std::puts("[tester_io] get<T> and get_column<T>");
+    {
+        write_file("tester_io_get.csv", "name,count,value\nalpha,3,1.5\nbeta,7,2.5\n");
+        const auto t = mist::io::read_csv("tester_io_get.csv");
+
+        // Typed cell access
+        check(mist::io::get<std::string>(t, "name", 0) == "alpha", "get<string>: row 0");
+        check(mist::io::get<std::string>(t, "name", 1) == "beta", "get<string>: row 1");
+        check(mist::io::get<int>(t, "count", 0) == 3, "get<int>: row 0");
+        check(mist::io::get<int>(t, "count", 1) == 7, "get<int>: row 1");
+        check(std::fabs(mist::io::get<double>(t, "value", 0) - 1.5) < 1e-9, "get<double>: row 0");
+        check(std::fabs(mist::io::get<double>(t, "value", 1) - 2.5) < 1e-9, "get<double>: row 1");
+
+        // Missing column returns T{}
+        check(mist::io::get<int>(t, "nonexistent", 0) == 0, "get<T>: missing col -> T{}");
+        check(mist::io::get<std::string>(t, "gone", 0) == "", "get<string>: missing col -> empty");
+
+        // Out-of-range row returns T{}
+        check(mist::io::get<std::string>(t, "name", 99) == "", "get<T>: out-of-range row -> T{}");
+        check(mist::io::get<int>(t, "count", 99) == 0, "get<int>: out-of-range row -> T{}");
+
+        // get_column — full column extraction
+        const auto names = mist::io::get_column<std::string>(t, "name");
+        check(names.size() == 2, "get_column<string>: size");
+        check(names[0] == "alpha", "get_column<string>: [0]");
+        check(names[1] == "beta", "get_column<string>: [1]");
+
+        const auto counts = mist::io::get_column<int>(t, "count");
+        check(counts.size() == 2, "get_column<int>: size");
+        check(counts[0] == 3, "get_column<int>: [0]");
+        check(counts[1] == 7, "get_column<int>: [1]");
+
+        const auto values = mist::io::get_column<double>(t, "value");
+        check(values.size() == 2, "get_column<double>: size");
+        check(std::fabs(values[0] - 1.5) < 1e-9, "get_column<double>: [0]");
+        check(std::fabs(values[1] - 2.5) < 1e-9, "get_column<double>: [1]");
+
+        // Missing column returns empty vector
+        check(mist::io::get_column<double>(t, "missing").empty(), "get_column: missing col -> empty");
+
+        std::remove("tester_io_get.csv");
     }
 
     mist::logger::set_min_level(prev);

@@ -150,9 +150,8 @@ void ProgressBar::update(double fraction, bool flush)
 
 void ProgressBar::finish(bool flush)
 {
-    // 1. Update state to 100% under the mutex (B2 fix: previously called
-    //    _update_state unlocked, violating its own "mutex_ must be held"
-    //    contract).
+    // 1. Update state to 100% under the mutex: _update_state's contract
+    //    requires the caller to hold mutex_.
     {
         std::lock_guard<std::mutex> lk(mutex_);
         if (!active_)
@@ -173,11 +172,10 @@ void ProgressBar::finish(bool flush)
     //    registry mutex (now held by us).
     AnchorObject::erase_all();
 
-    // 3. Emit the final 100% frame as a permanent scrolling line (B1 fix:
-    //    previously the bar was deactivated before any draw, so render_line
-    //    and _draw both early-returned and nothing was committed). Locking
-    //    around _draw keeps it consistent with the contract that the cached
-    //    suffix is only read with the mutex held.
+    // 3. Emit the final 100% frame as a permanent scrolling line.
+    //    Deactivating the bar before drawing would cause render_line and
+    //    _draw to early-return and commit nothing; draw first, deactivate
+    //    in step 4.  Mutex guards the cached-suffix reads inside _draw.
     {
         std::lock_guard<std::mutex> lk(mutex_);
         _draw();
