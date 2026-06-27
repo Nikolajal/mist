@@ -31,6 +31,12 @@ void HoughTransform::build_lut(const std::map<int, std::array<float, 2>> &index_
                                float r_min, float r_max, float r_step, float cell_size,
                                float centre_padding_mm)
 {
+    if (index_to_hit_xy.empty())
+    {
+        mist::logger::warning("(HoughTransform::build_lut) empty LUT map — call ignored.");
+        return;
+    }
+
     cell_size_ = cell_size;
 
     // Derive accumulator bounds from Hit positions
@@ -68,9 +74,8 @@ void HoughTransform::build_lut(const std::map<int, std::array<float, 2>> &index_
 
     // Build LUT: for each key, for each R bin, which accumulator cells does it vote for?
     // Arc rasterisation samples the circle at angles spaced so that each
-    // accumulator cell on the arc is Hit at least twice — this avoids
-    // undersampling at large radii where 360 fixed angles would leave gaps
-    // (B11 fix).
+    // accumulator cell on the arc is hit at least twice — avoiding
+    // undersampling at large radii where 360 fixed angles would leave gaps.
     //   arc length over one angular step ≈ R · Δθ
     //   target step size                ≈ cell_size / 2
     //   ⇒ n_angles ≈ 2π · R / (cell_size / 2) = 4π R / cell_size
@@ -116,9 +121,8 @@ void HoughTransform::build_lut(const std::map<int, std::array<float, 2>> &index_
     accum_.assign(r_bins_.size() * nx_ * ny_, 0);
     sat_.assign(accum_.size(), 0); // pre-size SAT scratch buffer (no per-call alloc)
 
-    // std::to_string replaces ROOT's Form() for portable string formatting.
-    mist::logger::info(
-        "(HoughTransform::build_lut) LUT built: " + std::to_string(lut_.size()) + " keys, " + std::to_string(r_bins_.size()) + " R bins, grid " + std::to_string(nx_) + "x" + std::to_string(ny_));
+    mist::logger::info("(HoughTransform::build_lut) LUT built: {} keys, {} R bins, grid {}x{}",
+                       lut_.size(), r_bins_.size(), nx_, ny_);
 }
 
 // ============================================================
@@ -143,11 +147,9 @@ void HoughTransform::vote(const std::vector<Hit> &hits,
         for (int iR = 0; iR < n_r; ++iR)
             for (int cell : entry[iR])
             {
-                // Defensive bounds check (B13): LUT construction already
-                // clamps ix/iy into [0, nx_) × [0, ny_), so this assert
-                // should never fire — but if anyone refactors build_lut
-                // and drops the clamp, we want a loud failure in debug
-                // builds rather than silent out-of-bounds writes.
+                // LUT construction already clamps ix/iy into [0, nx_) × [0, ny_),
+                // so this assert should never fire — loud debug failure if
+                // build_lut is refactored to drop the clamp.
                 assert(cell >= 0 && cell < n_cells);
                 ++accum_[iR * n_cells + cell];
             }
@@ -420,8 +422,8 @@ std::vector<RingResult> HoughTransform::find_rings(const std::vector<Hit> &hits,
     }
 
     // Sort by descending peak votes so callers can rely on rings[0] being
-    // the strongest candidate (B12 fix — the extraction order is *usually*
-    // but not strictly monotonic).
+    // the strongest candidate: extraction order is usually but not strictly
+    // monotonic due to the active-hit removal between passes.
     std::sort(found_rings.begin(), found_rings.end(),
               [](const RingResult &a, const RingResult &b)
               { return a.peak_votes > b.peak_votes; });

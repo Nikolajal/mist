@@ -82,6 +82,15 @@ struct circle_moments
     double Mxx, Myy, Mxy, Mxz, Myz, Mzz, Mz, cov_xy;
 };
 
+// Newton solver constants shared by taubin_eta and pratt_eta.
+inline constexpr int kNewtonMaxIter = 50;
+inline constexpr double kNewtonRelTol = 1e-12; ///< Convergence: |Δx/x| < this.
+inline constexpr double kNewtonInitY = 1e300;  ///< Sentinel: "no yold yet".
+
+/// Singularity guard on the determinant: |det| must exceed this fraction of
+/// the scale factor squared.  Shared with circle_fit().
+inline constexpr double kDetRelTol = 1e-12;
+
 /// Newton root of the Taubin characteristic cubic (started at 0).
 [[nodiscard]] inline double taubin_eta(const circle_moments &m)
 {
@@ -94,8 +103,8 @@ struct circle_moments
     const double A22 = A2 + A2;
     const double A33 = A3 + A3 + A3;
 
-    double x = 0.0, y = 1e300;
-    for (int i = 0; i < 50; ++i)
+    double x = 0.0, y = kNewtonInitY;
+    for (int i = 0; i < kNewtonMaxIter; ++i)
     {
         const double yold = y;
         y = A0 + x * (A1 + x * (A2 + x * A3));
@@ -106,7 +115,7 @@ struct circle_moments
             break;
         const double xold = x;
         x = xold - y / dy;
-        if (std::fabs((x - xold) / (x != 0.0 ? x : 1.0)) < 1e-12)
+        if (std::fabs((x - xold) / (x != 0.0 ? x : 1.0)) < kNewtonRelTol)
             break;
         if (x < 0.0)
             x = 0.0;
@@ -124,8 +133,8 @@ struct circle_moments
                       m.Myz * (m.Myz * m.Mxx - m.Mxz * m.Mxy) - var_z * m.cov_xy;
     const double A22 = A2 + A2;
 
-    double x = 0.0, y = 1e300;
-    for (int i = 0; i < 50; ++i)
+    double x = 0.0, y = kNewtonInitY;
+    for (int i = 0; i < kNewtonMaxIter; ++i)
     {
         const double yold = y;
         y = A0 + x * (A1 + x * (A2 + 4.0 * x * x));
@@ -136,7 +145,7 @@ struct circle_moments
             break;
         const double xold = x;
         x = xold - y / dy;
-        if (std::fabs((x - xold) / (x != 0.0 ? x : 1.0)) < 1e-12)
+        if (std::fabs((x - xold) / (x != 0.0 ? x : 1.0)) < kNewtonRelTol)
             break;
         if (x < 0.0)
             x = 0.0;
@@ -150,7 +159,8 @@ struct circle_moments
      *
      * @tparam Range  A forward range (iterated more than once) of @ref Point2.
      * @param  points Input points.
-     * @param  method Algebraic method (default @ref circle_method::kasa).
+     * @param  method Algebraic method (default @ref circle_method::taubin —
+     *                recommended for Hough-candidate refinement).
      * @return Fit result; @c ok == false on degenerate input (see
      *         @ref CircleFitResult).
      *
@@ -161,7 +171,7 @@ struct circle_moments
 template <std::ranges::forward_range Range>
     requires Point2<std::ranges::range_value_t<Range>>
 [[nodiscard]] CircleFitResult circle_fit(const Range &points,
-                                         circle_method method = circle_method::kasa)
+                                         circle_method method = circle_method::taubin)
 {
     CircleFitResult result;
 
@@ -222,7 +232,7 @@ template <std::ranges::forward_range Range>
 
     const double det = eta * eta - eta * m.Mz + m.cov_xy;
     const double scale = m.Mz; // ~ R^2; moments are O(R^2)
-    if (!(std::fabs(det) > 1e-12 * scale * scale) || scale == 0.0)
+    if (!(std::fabs(det) > detail::kDetRelTol * scale * scale) || scale == 0.0)
         return result;
 
     const double uc = (m.Mxz * (m.Myy - eta) - m.Myz * m.Mxy) / (2.0 * det);

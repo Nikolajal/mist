@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include <mist/logger/logger.h>
@@ -143,6 +144,60 @@ read_csv(const std::string &path, std::vector<std::string> *header_order = nullp
 read_txt(const std::string &path, std::vector<std::string> *header_order = nullptr)
 {
     return read_delimited(path, " \t", /*collapse=*/true, header_order);
+}
+
+// ---------------------------------------------------------------------------
+// Typed accessors
+// ---------------------------------------------------------------------------
+
+/**
+     * @brief Return one cell as type @c T.
+     *
+     * Converts the string stored at (@p col, @p row) to @c T via
+     * @c std::istringstream.  Returns @c T{} for a missing column/row or a
+     * failed conversion.  @c T = @c std::string returns the raw cell without
+     * conversion.
+     *
+     * @tparam T  Target type: any type readable by @c operator>>, or @c std::string.
+     */
+template <typename T>
+[[nodiscard]] inline T
+get(const std::map<std::string, std::vector<std::string>> &table,
+    const std::string &col, std::size_t row)
+{
+    auto it = table.find(col);
+    if (it == table.end() || row >= it->second.size())
+        return T{};
+    if constexpr (std::is_same_v<T, std::string>)
+        return it->second[row];
+    else
+    {
+        T result{};
+        std::istringstream ss(it->second[row]);
+        ss >> result;
+        return result;
+    }
+}
+
+/**
+     * @brief Convert an entire column to @c std::vector<T>.
+     *
+     * Calls @ref get for each row.  Returns an empty vector if the column is
+     * absent.
+     */
+template <typename T>
+[[nodiscard]] inline std::vector<T>
+get_column(const std::map<std::string, std::vector<std::string>> &table,
+           const std::string &col)
+{
+    auto it = table.find(col);
+    if (it == table.end())
+        return {};
+    std::vector<T> out;
+    out.reserve(it->second.size());
+    for (std::size_t i = 0; i < it->second.size(); ++i)
+        out.push_back(get<T>(table, col, i));
+    return out;
 }
 
 } // namespace mist::io

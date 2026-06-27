@@ -42,4 +42,25 @@ log_binning(std::size_t n_bins, double x_min, double x_max)
     return edges;
 }
 
+// ---------------------------------------------------------------------------
+// linspace: n_bins + 1 edges spanning [x_min, x_max], evenly spaced (linear
+// scale). Endpoints are pinned exactly. A C++20 gap-filler — std::linspace
+// is proposed for C++26; drop this in favour of std:: once that is available.
+// ---------------------------------------------------------------------------
+[[nodiscard]] inline std::vector<double>
+linspace(std::size_t n_bins, double x_min, double x_max)
+{
+    std::vector<double> edges;
+    if (n_bins == 0 || !(x_max > x_min))
+        return edges;
+
+    const double step = (x_max - x_min) / static_cast<double>(n_bins);
+    edges.reserve(n_bins + 1);
+    for (std::size_t i = 0; i <= n_bins; ++i)
+        edges.push_back(x_min + static_cast<double>(i) * step);
+    edges.front() = x_min;
+    edges.back() = x_max;
+    return edges;
+}
+
 } // namespace mist::algo

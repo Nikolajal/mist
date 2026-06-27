@@ -92,26 +92,12 @@ the `algo/` files already carried it. Every `.h`/`.cxx` in `include/` and
 
 ---
 
-### D-04 — Branch policy and `main` creation
+### ~~D-04 — Branch policy and `main` creation~~ → RESOLVED
 
-**Observation:**
-mist's default development branch is `dev`; there is no `main`. The new
-docs workflow ([`.github/workflows/docs.yml`](.github/workflows/docs.yml))
-publishes to GitHub Pages on push to `main` only, so the site cannot
-publish until `main` exists.
-
-**Options:**
-
-| Option | Mechanism | Trade-off |
-|---|---|---|
-| A — create `main` from current `dev` HEAD, switch default | One-time `git push origin dev:main && gh repo edit --default-branch main` | Cleanest; aligns with GitHub's modern default and with the sibling `mist-hep` (also `main`). |
-| B — keep `dev`, retarget the docs workflow to `dev` | Edit `on: push.branches` to `[dev]` | No branch churn, but consumers landing on the repo see an unusual default. |
-| C — keep `dev` as integration, treat `main` as stable releases only | Manual `dev → main` merge per release | Adds release ceremony; overkill for the current cadence. |
-
-**Recommendation:** Option A. The "dev as default" convention predates the
-need for protected-stable + integration split, which mist doesn't need yet.
-
-**Decision needed:** Confirm A, or pick another.
+Decision taken (Option C, post-v1.0.0 policy): `main` now exists as the
+stable-releases-only branch; `dev` is the integration branch. The docs
+workflow publishes on push to `main`. The `CONTRIBUTING.md` branching model
+reflects this. No further action.
 
 ---
 
@@ -174,11 +160,10 @@ inherit from `AnchorObject` and use `erase_all` / `redraw_all` in its
 progress-bar-like type will corrupt in-flight bars and break the colour
 discipline.
 
-This was the root cause of a regression after the 2026-03 refactor — see
-[`memory/project_mist_drich.md`](https://github.com/Nikolajal/mist) for
-the full story. The carveout for the logger's own implementation (allowed
-to write to `cout`/`cerr` directly) does **not** extend to new UI types
-added after the refactor: those go through the protocol.
+This was the root cause of a regression after the 2026-03 refactor. The
+carveout for the logger's own implementation (allowed to write to
+`cout`/`cerr` directly) does **not** extend to new UI types added after
+the refactor: those go through the protocol.
 
 ### A-02 — Two narrow `std::cout`/`std::cerr` exceptions
 
@@ -221,7 +206,6 @@ Features that have been discussed but not yet designed. Each is a one-liner
 | F-02 | `mist::logger::table` | Formatted column-aligned table anchored in the terminal band. Must follow the anchor protocol (see A-01). |
 | F-03 | `mist::logger::spinner` | Single-line animated spinner for unbounded waits. Same anchor protocol. |
 | F-04 | Windows `GetConsoleScreenBufferInfo` fallback in `terminal_width()` | Replace the `#ifdef MIST_HAS_IOCTL` guard with a cross-platform wrapper. |
-| F-05 | `mist::algo::sign(T)` | **done** — three-valued sign (`-1`/`0`/`+1`), `constexpr`, `requires std::is_arithmetic_v<T>`. Salvaged from BLU `sgn<T>`. Lives in `include/mist/algo/util.h`. |
 
 ---
 

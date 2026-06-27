@@ -13,8 +13,8 @@
  * #include <mist/logger/logger.h>                // logger + ProgressBar
  * #include <mist/logger/progress_bar.h>          // ProgressBar only
  * #include <mist/ring_finding/ransac_ring_finder.h> // RANSAC ring-finder
- * #include <mist/algo/binning.h>                 // block_mean, block_rms
- * #include <mist/algo/smoothing.h>               // moving_mean
+ * #include <mist/algo/binning.h>                 // block_mean, block_rms, weighted_block_mean
+ * #include <mist/algo/smoothing.h>               // moving_mean, ema, gaussian_smooth
  * #include <mist/rnd.h>                          // RNG only
  * @endcode
  *
@@ -22,14 +22,25 @@
  *
  *   mist.h
  *   ├── rnd.h
+ *   ├── bits.h                        (encode_bit, encode_bits, count_trailing_zeros, decode_bits)
+ *   ├── io.h                          (read_csv, read_txt)
+ *   ├── time.h                        (parse, to_string)
  *   ├── logger/logger.h
  *   │   ├── logger/logger_types.h    (ColourTag, StyleTag, LevelTag, ansi())
  *   │   ├── logger/progress_bar.h
  *   │   └── logger/multi_progress_bar.h
  *   ├── ring_finding/hough_transform.h
+ *   ├── ring_finding/circle_fit.h    (circle_fit, circle_method, CircleFitResult)
+ *   ├── ring_finding/ransac_ring_finder.h
+ *   ├── ring_finding/ring_model.h
+ *   ├── stats/sideband.h              (sideband_subtract)
+ *   ├── stats/timing.h               (triangle_acceptance, poisson_rate_mle)
  *   └── algo/
- *       ├── binning.h                 (block_mean, block_rms)
- *       └── smoothing.h               (moving_mean)
+ *       ├── binning.h                (block_mean, block_rms, weighted_block_mean)
+ *       ├── smoothing.h              (moving_mean, ema, gaussian_smooth)
+ *       ├── util.h                   (sign)
+ *       ├── edges.h                  (log_binning, linspace)
+ *       └── intersect.h              (intersect_lines, line_zero_crossing)
  */
 
 //  --- Random utility

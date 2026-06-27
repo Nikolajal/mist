@@ -1,84 +1,117 @@
 # Coding conventions
 
-Naming and structural conventions followed across the mist toolkit.
-Reference material for new contributors and code review — not a discussion
-log. The same conventions apply to sibling repositories (`mist-hep`,
-`beam-test-analysis`); only the macro prefix and example pool change.
+Naming and structural conventions for all languages used across projects.
+Drop this file into any repo unchanged; add a project-specific section at
+the bottom only for rules that genuinely deviate.
 
-## Naming
+---
 
-| Kind                                       | Style                  | Examples                                                  |
-|--------------------------------------------|------------------------|-----------------------------------------------------------|
-| Variables, free functions, methods         | `snake_case`           | `bar_width`, `current_tick`, `erase_all`, `update`        |
-| Private members                            | `snake_case_`          | `tag_`, `cursor_row_`, `subtasks_`                        |
-| Classes, structs, type aliases             | `PascalCase`           | `ProgressBar`, `MultiProgressBar`, `AnchorObject`, `Hit`  |
-| Enum values (incl. legacy plain enums)     | `PascalCase`           | `BrightGreen`, `Bold`, `Info`, `Warning`                  |
-| Project macros                             | `MIST_` + `ALL_CAPS`   | `MIST_BUILD_TESTS`                                        |
-| Namespaces                                 | `lowercase`            | `mist`, `mist::logger`, `mist::ring_finding`              |
-| Filenames (incl. macro entry-points)       | `snake_case`           | `progress_bar.cxx`, `hough_transform.cxx`, `rnd.h`        |
+## All languages
 
-## Local-vs-type collision rule
+### File and directory naming
+
+`snake_case` for filenames in every language.
+No loose files in root — group by theme into subdirs.
+
+### Comments and documentation
+
+Write no comments by default. Add one only when the **why** is
+non-obvious: a hidden constraint, a subtle invariant, a workaround for a
+specific bug. One line max. Never explain what the code does — names do
+that. No dated comments; they rot immediately.
+
+### Constants and magic numbers
+
+All magic numbers are named constants. Zero bare literals for domain
+values.
+
+---
+
+## Python
+
+### Naming
+
+| Kind                              | Style               | Examples                              |
+|-----------------------------------|---------------------|---------------------------------------|
+| Variables, free functions, methods | `snake_case`       | `bar_width`, `emit_photon`, `update`  |
+| Private (module or class)         | `_leading_underscore` | `_frame`, `_cache`                  |
+| Classes                           | `PascalCase`        | `MovingParticle`, `ColorPalette`      |
+| Module-level constants            | `UPPER_CASE`        | `ELECTRON`, `PHOTON`                  |
+| Filenames                         | `snake_case`        | `palette.py`, `frame.py`             |
+
+### Type hints
+
+Required on all public function signatures — parameters and return type.
+Optional on private helpers, but encouraged.
+
+### Docstrings
+
+One line max. Only when the why is non-obvious. Omit entirely when the
+name makes the purpose clear. No multi-line blocks.
+
+### Import order
+
+Three groups, one blank line between each:
+
+1. Standard library
+2. Third-party
+3. Local / project
+
+### Output
+
+`print` is acceptable. No debug prints left in committed code.
+
+### Package structure
+
+Each subpackage exposes its public API through `__init__.py`; callers
+import from the package, not from internal modules directly.
+
+---
+
+## C++
+
+### Naming
+
+| Kind                               | Style                | Examples                                    |
+|------------------------------------|----------------------|---------------------------------------------|
+| Variables, free functions, methods | `snake_case`         | `bar_width`, `current_tick`, `erase_all`    |
+| Private members                    | `snake_case_`        | `tag_`, `cursor_row_`, `subtasks_`          |
+| Classes, structs, type aliases     | `PascalCase`         | `ProgressBar`, `AnchorObject`, `Hit`        |
+| Enum values                        | `PascalCase`         | `BrightGreen`, `Bold`, `Info`               |
+| Project macros                     | `PROJECT_` + `ALL_CAPS` | `MIST_BUILD_TESTS`                       |
+| Namespaces                         | `lowercase`          | `mist`, `mist::ring_finding`                |
+| Filenames                          | `snake_case`         | `progress_bar.cxx`, `hough_transform.h`     |
+
+### Local-vs-type collision rule
 
 When a local variable would otherwise be spelled identically to its type
 (`Hit hit`, `ProgressBar progressbar`), break the collision with one of:
 
 1. **`current_` prefix** when the variable is simply "the one being processed
-   right now": `Hit current_hit;`, `ProgressBar current_bar;`.
-2. **A semantic role name** when the context warrants more specificity:
-   `Hit candidate_hit`, `Hit reference_hit`, `ProgressBar outer_bar`.
+   right now": `Hit current_hit;`.
+2. **A semantic role name** when context warrants more specificity:
+   `Hit candidate_hit`, `Hit reference_hit`.
 
 Prefer the semantic role when several instances of the same type appear in
 the same scope; reach for `current_` when no better name is available.
 
-## Output: never `std::cout` / `std::cerr` / `printf`
+### Output
 
-All textual output goes through `mist::logger`. This is the whole reason the
-logger exists — it owns the terminal (cursor positioning, anchor protocol,
-progress-bar redraw) and any raw write to `cout`/`cerr` will corrupt
-in-flight progress bars and break colour discipline.
+Never write to stdout/stderr directly from application code. Route all
+output through the project's logging facility. Tests may use
+`std::cout`/`std::cerr` for terse assertion macros where pulling in the
+logger would obscure the test.
 
-```cpp
-// no
-std::cout << "loaded " << n << " events\n";
-std::cerr << "warning: …\n";
-std::printf("done\n");
+### File layout
 
-// yes
-mist::logger::info("loaded {} events", n);
-mist::logger::warning("…");
-mist::logger::done("done");
-```
+Public headers under `include/<project>/<module>/`; implementation TUs
+under `src/<module>/`. The directory under `include/<project>/` mirrors
+the namespace under `<project>::`.
 
-**Two narrow exceptions, both inside `mist` itself:**
+### Include order
 
-1. **The logger implementation** (`src/logger/*.cxx`) is the one place that
-   *must* write to `cout`/`cerr` — it is the thing being implemented. New
-   writes there go through the anchor protocol (`erase_all` / `redraw_all`),
-   never raw.
-2. **Third-party output capture** (e.g. ROOT's minimiser writing to `cout`
-   directly) is funneled through `mist::logger::ScopedCoutToMist`, which
-   redirects the stream into the logger for the duration of a scope. Reach
-   for it when wrapping a library call that you don't control.
-
-Tests may use `std::cout` / `std::cerr` for terse assertion macros where
-pulling in the logger would obscure the test itself — keep this minimal and
-prefer the logger where it reads cleanly.
-
-## File layout
-
-Public headers live under `include/mist/<module>/`; implementation TUs under
-`src/<module>/`. The directory under `include/mist/` is the namespace under
-`mist::` — `include/mist/ring_finding/hough_transform.h` declares symbols in
-`mist::ring_finding`. Don't break this mapping; downstream consumers rely on
-the include path matching the namespace.
-
-## Include order
-
-Inside each TU, group includes top-to-bottom and separate groups with a
-blank line:
-
-1. The header this TU implements (for `.cxx` files only)
+1. The header this TU implements (`.cxx` only)
 2. C / C++ standard library
-3. Other mist modules
-4. Third-party libraries (ROOT, etc.) — none in core mist
+3. Other project modules
+4. Third-party libraries
 5. Project-internal headers from the same module

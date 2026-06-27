@@ -233,6 +233,121 @@ int main()
     check(a::log_binning(5, 10.0, 1.0).empty(), "log_binning: x_max<=x_min -> empty");
 
     // ------------------------------------------------------------------
+    std::puts("[tester_algo] linspace");
+    {
+        const auto e = a::linspace(4, 0.0, 1.0);
+        check(e.size() == 5, "linspace: n+1 edges");
+        check_close(e[0], 0.0, 1e-15, "linspace: front pinned");
+        check_close(e[4], 1.0, 1e-15, "linspace: back pinned");
+        check_close(e[1], 0.25, 1e-12, "linspace: step 1");
+        check_close(e[2], 0.50, 1e-12, "linspace: step 2");
+        check_close(e[3], 0.75, 1e-12, "linspace: step 3");
+        // constant difference between adjacent edges
+        check_close(e[1] - e[0], e[2] - e[1], 1e-12, "linspace: uniform spacing");
+    }
+    check(a::linspace(0, 0.0, 1.0).empty(), "linspace: n=0 -> empty");
+    check(a::linspace(5, 1.0, 0.0).empty(), "linspace: x_max<=x_min -> empty");
+
+    // ------------------------------------------------------------------
+    std::puts("[tester_algo] weighted_block_mean");
+    {
+        // Equal weights -> same as block_mean.
+        std::vector<double> in = {1, 2, 3, 4};
+        std::vector<double> w = {1, 1, 1, 1};
+        const auto got = a::weighted_block_mean(in, w, 2);
+        check_vec_close(got, {1.5, 3.5}, 1e-12, "equal weights == block_mean");
+    }
+    {
+        // Block {0,4} with weights {1,3}: (0*1 + 4*3)/(1+3) = 3.0.
+        // Block {0,4} with weights {3,1}: (0*3 + 4*1)/(3+1) = 1.0.
+        std::vector<double> in = {0, 4, 0, 4};
+        std::vector<double> w = {1, 3, 3, 1};
+        const auto got = a::weighted_block_mean(in, w, 2);
+        check_vec_close(got, {3.0, 1.0}, 1e-12, "non-uniform weights");
+    }
+    {
+        // Zero-weight block -> emits 0, not NaN.
+        std::vector<double> in = {5, 7};
+        std::vector<double> w = {0, 0};
+        const auto got = a::weighted_block_mean(in, w, 2);
+        check(got.size() == 1, "zero-weight block size");
+        check_close(got[0], 0.0, 1e-15, "zero-weight block -> 0");
+    }
+    {
+        // drop_partial=true discards the trailing partial block.
+        std::vector<double> in = {1, 2, 3};
+        std::vector<double> w = {1, 1, 1};
+        const auto got = a::weighted_block_mean(in, w, 2, true);
+        check(got.size() == 1, "drop_partial discards tail");
+        check_close(got[0], 1.5, 1e-12, "drop_partial value");
+    }
+
+    // ------------------------------------------------------------------
+    std::puts("[tester_algo] ema");
+    {
+        // alpha=1 is a pass-through.
+        std::vector<double> in = {3, 1, 4, 1, 5};
+        const auto got = a::ema(in, 1.0);
+        check_vec_close(got, {3, 1, 4, 1, 5}, 1e-12, "alpha=1 pass-through");
+    }
+    {
+        // alpha=0.5, input all-1s -> output all-1s (stationary).
+        std::vector<double> in(10, 1.0);
+        const auto got = a::ema(in, 0.5);
+        check(got.size() == 10, "ema output length");
+        check_close(got.back(), 1.0, 1e-9, "stationary all-1 EMA");
+    }
+    {
+        // Step input: [0,0,...,0,1,1,...,1] -> output converges toward 1.
+        std::vector<double> in(20, 0.0);
+        in[10] = 1.0;
+        in[11] = 1.0;
+        in[12] = 1.0;
+        in[13] = 1.0;
+        in[14] = 1.0;
+        in[15] = 1.0;
+        in[16] = 1.0;
+        in[17] = 1.0;
+        in[18] = 1.0;
+        in[19] = 1.0;
+        const auto got = a::ema(in, 0.5);
+        // After the step the EMA must be > 0 and < 1.
+        check(got[10] > 0.0 && got[10] < 1.0, "ema responds to step");
+        // And it must be monotonically increasing in the second half.
+        for (int i = 11; i < 20; ++i)
+            check(got[static_cast<std::size_t>(i)] >= got[static_cast<std::size_t>(i - 1)],
+                  "ema monotone after step");
+    }
+    check(a::ema(std::vector<double>{}, 0.5).empty(), "ema: empty -> empty");
+    check(a::ema(std::vector<double>{1, 2}, 0.0).empty(), "ema: alpha=0 -> empty");
+    check(a::ema(std::vector<double>{1, 2}, 1.1).empty(), "ema: alpha>1 -> empty");
+
+    // ------------------------------------------------------------------
+    std::puts("[tester_algo] gaussian_smooth");
+    {
+        // Constant input -> output equals input (kernel sums to 1 by design).
+        std::vector<double> in(20, 3.0);
+        const auto got = a::gaussian_smooth(in, 2.0);
+        check(got.size() == 20, "gaussian_smooth output length");
+        for (std::size_t i = 0; i < got.size(); ++i)
+            check_close(got[i], 3.0, 1e-12, "constant input preserved");
+    }
+    {
+        // Impulse at centre: output must be symmetric and peak at centre.
+        std::vector<double> in(21, 0.0);
+        in[10] = 1.0;
+        const auto got = a::gaussian_smooth(in, 1.5);
+        check(got.size() == 21, "impulse output length");
+        // Peak at position 10.
+        check(got[10] >= got[9] && got[10] >= got[11], "impulse peak at centre");
+        // Symmetric around centre (indices equidistant from 10).
+        check_close(got[8], got[12], 1e-12, "impulse symmetry");
+        check_close(got[7], got[13], 1e-12, "impulse symmetry 2");
+    }
+    check(a::gaussian_smooth(std::vector<double>{}, 1.0).empty(), "gaussian_smooth: empty -> empty");
+    check(a::gaussian_smooth(std::vector<double>{1.0}, 0.0).empty(), "gaussian_smooth: sigma=0 -> empty");
+
+    // ------------------------------------------------------------------
     if (failures)
     {
         std::printf("[tester_algo] %d failure(s)\n", failures);

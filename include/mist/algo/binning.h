@@ -90,14 +90,16 @@ block_mean(R &&r, std::size_t n, bool drop_partial = false)
 // because the "sample" vs "population" choice is not universal.
 // ---------------------------------------------------------------------------
 
-template <std::input_iterator InputIt>
-    requires std::floating_point<typename std::iterator_traits<InputIt>::value_type>
-[[nodiscard]] std::vector<typename std::iterator_traits<InputIt>::value_type>
-block_rms(InputIt first, InputIt last,
+// block_rms makes two passes over each block (mean then variance), so it
+// requires a multi-pass (forward) iterator — input iterators are single-use.
+template <std::forward_iterator ForwardIt>
+    requires std::floating_point<typename std::iterator_traits<ForwardIt>::value_type>
+[[nodiscard]] std::vector<typename std::iterator_traits<ForwardIt>::value_type>
+block_rms(ForwardIt first, ForwardIt last,
           std::size_t n,
           bool drop_partial = false)
 {
-    using T = typename std::iterator_traits<InputIt>::value_type;
+    using T = typename std::iterator_traits<ForwardIt>::value_type;
     std::vector<T> out;
     if (n == 0)
         return out;
@@ -134,12 +136,67 @@ block_rms(InputIt first, InputIt last,
     return out;
 }
 
-template <std::ranges::input_range R>
+template <std::ranges::forward_range R>
     requires std::floating_point<std::ranges::range_value_t<R>>
 [[nodiscard]] auto
 block_rms(R &&r, std::size_t n, bool drop_partial = false)
 {
     return block_rms(std::ranges::begin(r), std::ranges::end(r), n, drop_partial);
+}
+
+// ---------------------------------------------------------------------------
+// weighted_block_mean
+//
+// Like block_mean but each value is weighted by a parallel weight sequence.
+// Each output value is sum(w_i * x_i) / sum(w_i) over the block.
+// A block whose total weight is zero emits 0 rather than NaN.
+// ---------------------------------------------------------------------------
+
+template <std::input_iterator InputIt, std::input_iterator WeightIt>
+    requires std::floating_point<typename std::iterator_traits<InputIt>::value_type>
+[[nodiscard]] std::vector<typename std::iterator_traits<InputIt>::value_type>
+weighted_block_mean(InputIt first, InputIt last, WeightIt wfirst,
+                    std::size_t n, bool drop_partial = false)
+{
+    using T = typename std::iterator_traits<InputIt>::value_type;
+    std::vector<T> out;
+    if (n == 0)
+        return out;
+
+    const auto size = static_cast<std::size_t>(std::distance(first, last));
+    if (n > size)
+        return out;
+
+    out.reserve(size / n + (drop_partial ? 0 : 1));
+
+    auto it = first;
+    auto wit = wfirst;
+    while (it != last)
+    {
+        const auto remaining = static_cast<std::size_t>(std::distance(it, last));
+        const std::size_t block = std::min(n, remaining);
+        if (block < n && drop_partial)
+            break;
+
+        T wsum = T(0), wxsum = T(0);
+        for (std::size_t i = 0; i < block; ++i, ++it, ++wit)
+        {
+            const T w = static_cast<T>(*wit);
+            wsum += w;
+            wxsum += w * (*it);
+        }
+        out.push_back(wsum > T(0) ? wxsum / wsum : T(0));
+    }
+    return out;
+}
+
+template <std::ranges::input_range R, std::ranges::input_range W>
+    requires std::floating_point<std::ranges::range_value_t<R>>
+[[nodiscard]] auto
+weighted_block_mean(R &&r, W &&w, std::size_t n, bool drop_partial = false)
+{
+    return weighted_block_mean(std::ranges::begin(r), std::ranges::end(r),
+                               std::ranges::begin(w), n, drop_partial);
 }
 
 } // namespace mist::algo
